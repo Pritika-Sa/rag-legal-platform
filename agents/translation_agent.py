@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from utils.llm_client import invoke_llm_structured
+from utils.llm_client import invoke_llm_structured_chunked
 
 
 class TranslationResult(BaseModel):
@@ -17,10 +17,26 @@ def translate_clause(clause_text: str, target_language: str) -> TranslationResul
         "3. Preserve all named legal entities and company names without translating them.\n"
         "4. Assign a 'confidence_score' between 0 and 100 for legal accuracy."
     )
-    prompt = f"Clause to translate:\n\n{clause_text}"
 
-    try:
-        return invoke_llm_structured(system_instruction, prompt, TranslationResult)
-    except Exception as e:
-        print(f"Error in translation agent: {e}")
-        return TranslationResult(translated_clause=f"Translation failed: {str(e)}", confidence_score=0)
+    # Tamil/Hindi output tokenizes far less efficiently than English (more
+    # tokens per character), so a clause whose full translation would exceed
+    # the model's completion budget gets chunked and stitched back together
+    # to keep every call's output well under that budget.
+    results = invoke_llm_structured_chunked(
+        system_instruction, clause_text, TranslationResult, prompt_prefix="Clause to translate:\n\n"
+    )
+
+    translated_parts = []
+    scores = []
+    for result, error in results:
+        if result is not None:
+            translated_parts.append(result.translated_clause)
+            scores.append(result.confidence_score)
+        else:
+            print(f"Error in translation agent: {error}")
+            translated_parts.append(f"[Translation failed for this section: {error}]")
+            scores.append(0)
+
+    translated_clause = " ".join(translated_parts)
+    confidence_score = int(sum(scores) / len(scores)) if scores else 0
+    return TranslationResult(translated_clause=translated_clause, confidence_score=confidence_score)

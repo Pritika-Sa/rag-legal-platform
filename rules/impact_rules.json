@@ -1,0 +1,14 @@
+{
+  "impact_base": {
+    "Termination": {"legal": 60, "financial": 40, "business": 50, "compliance": 20},
+    "Liability": {"legal": 70, "financial": 75, "business": 40, "compliance": 30},
+    "Confidentiality": {"legal": 40, "financial": 20, "business": 30, "compliance": 50},
+    "Arbitration": {"legal": 55, "financial": 25, "business": 20, "compliance": 15},
+    "Payment": {"legal": 30, "financial": 70, "business": 50, "compliance": 20},
+    "Indemnity": {"legal": 75, "financial": 70, "business": 35, "compliance": 30},
+    "Compliance": {"legal": 50, "financial": 30, "business": 30, "compliance": 75},
+    "Jurisdiction": {"legal": 55, "financial": 15, "business": 15, "compliance": 25},
+    "Force Majeure": {"legal": 35, "financial": 30, "business": 55, "compliance": 20},
+    "General": {"legal": 10, "financial": 10, "business": 10, "compliance": 10}
+  }
+}

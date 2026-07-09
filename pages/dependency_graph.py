@@ -2,9 +2,14 @@ import streamlit as st
 from database import crud
 from utils.visualizer import render_pyvis_graph
 from agents.dependency_agent import extract_clause_dependencies
+from utils.theme import render_header
 
-st.title("🔗 Clause Dependency Network (Agent 12)")
-st.markdown("Visualizes AI-detected semantic relationships and legal dependencies between clauses (e.g., Termination → Liability).")
+render_header(
+    "🔗",
+    "Clause Dependency Network",
+    "Visualizes AI-detected semantic relationships and legal dependencies between clauses (e.g., Termination → Liability).",
+    badge="Agent 12"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -75,7 +80,19 @@ else:
                         - Node sizes and colors reflect risk categories, with **Red** indicating High Risk exposure.
                         """
                     )
-                    
+
+                    # Plain-language list of every edge's explanation —
+                    # dependency_agent already computes this per edge, but it
+                    # was previously only visible as a hover tooltip, which is
+                    # easy to miss when the diagram gets busy.
+                    if detected_edges:
+                        st.markdown("### 📝 Relationship Explanations")
+                        st.caption("Plain-language reading of every arrow shown in the diagram above.")
+                        for e in detected_edges:
+                            source_label = clause_lookup.get(e.source_clause_id, f"Clause {e.source_clause_id}")
+                            target_label = clause_lookup.get(e.target_clause_id, f"Clause {e.target_clause_id}")
+                            st.markdown(f"- **{source_label}** — *{e.dependency_type}* → **{target_label}**: {e.explanation}")
+
                     crud.add_audit_log("dependency_graph", f"Agent 12 generated dependency graph for document '{doc_name}'")
                 except Exception as e:
                     st.error(f"Failed to generate dependency graph: {e}")

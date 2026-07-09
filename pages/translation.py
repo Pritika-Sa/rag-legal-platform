@@ -1,8 +1,13 @@
 import streamlit as st
 from database import crud
+from utils.theme import render_header
 
-st.title("🌐 Legal Clause Translation")
-st.markdown("Translate contract terms into multiple languages while preserving precise legal definitions and context.")
+render_header(
+    "🌐",
+    "Legal Clause Translation",
+    "Translate contract terms into multiple languages while preserving precise legal definitions and context.",
+    badge="Agent 8"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -27,7 +32,7 @@ else:
         
         clause = next(c for c in clauses if c['id'] == selected_clause_id)
         
-        languages = ["Tamil", "Hindi", "French", "German", "Spanish"]
+        languages = ["Tamil", "Hindi"]
         target_lang = st.selectbox("Select Target Language:", languages)
         
         col1, col2 = st.columns(2)
@@ -53,18 +58,18 @@ else:
                         st.markdown(
                             f"""
                             <div style="margin-bottom: 10px;">
-                                <span style="background-color: rgba(255,255,255,0.05); border: 1px solid {score_color}; color: {score_color}; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
+                                <span style="background-color: rgba(128,128,128,0.15); border: 1px solid {score_color}; color: {score_color}; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
                                     Confidence Score: {result.confidence_score}/100
                                 </span>
                             </div>
                             """,
                             unsafe_allow_html=True
                         )
-                        
+
                         st.markdown(
                             f"""
-                            <div style="background-color: #0c0e14; padding: 15px; border-radius: 8px; border-left: 3px solid #636EFA;">
-                                <p style="font-size: 0.95rem; line-height: 1.5; color: #E0E0E0;">{result.translated_clause}</p>
+                            <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border-left: 3px solid #636EFA;">
+                                <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">{result.translated_clause}</p>
                             </div>
                             """,
                             unsafe_allow_html=True

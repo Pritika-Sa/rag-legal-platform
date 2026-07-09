@@ -5,6 +5,26 @@ import plotly.graph_objects as go
 import networkx as nx
 from pyvis.network import Network
 import streamlit as st
+from utils.theme import is_light_theme
+
+# Plotly/PyVis render literal color values rather than reading the page's
+# CSS, so chart chrome (axis text, gridlines, chart background) needs to be
+# picked explicitly per theme instead of inheriting from app.py's CSS vars.
+_CHART_COLORS = {
+    "dark": {
+        "text": "#E0E0E0", "grid": "#333333", "pyvis_bg": "#1E1E1E",
+        "legend_bg": "rgba(0,0,0,0.5)", "threshold": "white", "muted": "#888888",
+    },
+    "light": {
+        "text": "#31333F", "grid": "#D5D5D5", "pyvis_bg": "#FFFFFF",
+        "legend_bg": "rgba(255,255,255,0.7)", "threshold": "#31333F", "muted": "#6b6b6b",
+    },
+}
+
+
+def _chart_colors():
+    return _CHART_COLORS["light"] if is_light_theme() else _CHART_COLORS["dark"]
+
 
 def generate_risk_pie_chart(risk_dist):
     """Generates a Plotly Pie Chart for risk level distribution."""
@@ -31,10 +51,11 @@ def generate_risk_pie_chart(risk_dist):
         title="Clause Risk Level Distribution"
     )
     
+    chart_colors = _chart_colors()
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font_color='#E0E0E0',
+        font_color=chart_colors["text"],
         title_font_size=18,
         margin=dict(t=40, b=10, l=10, r=10)
     )
@@ -77,13 +98,14 @@ def generate_category_bar_chart(clauses):
         barmode="stack"
     )
     
+    chart_colors = _chart_colors()
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font_color='#E0E0E0',
+        font_color=chart_colors["text"],
         title_font_size=18,
-        xaxis=dict(gridcolor='#333333'),
-        yaxis=dict(gridcolor='#333333'),
+        xaxis=dict(gridcolor=chart_colors["grid"]),
+        yaxis=dict(gridcolor=chart_colors["grid"]),
         margin=dict(t=40, b=20, l=10, r=10)
     )
     return fig
@@ -115,28 +137,30 @@ def generate_risk_evolution_chart(versions_data):
         marker=dict(size=8)
     ))
     
+    chart_colors = _chart_colors()
     fig.update_layout(
         title="Contract Risk Profile Evolution",
         xaxis_title="Contract Version",
         yaxis_title="Metric Value",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font_color='#E0E0E0',
+        font_color=chart_colors["text"],
         title_font_size=18,
-        xaxis=dict(gridcolor='#333333', tickmode='linear', tick0=1, dtick=1),
-        yaxis=dict(gridcolor='#333333'),
-        legend=dict(x=0.01, y=0.99, bgcolor='rgba(0,0,0,0.5)'),
+        xaxis=dict(gridcolor=chart_colors["grid"], tickmode='linear', tick0=1, dtick=1),
+        yaxis=dict(gridcolor=chart_colors["grid"]),
+        legend=dict(x=0.01, y=0.99, bgcolor=chart_colors["legend_bg"]),
         margin=dict(t=50, b=30, l=10, r=10)
     )
     return fig
 
 def render_pyvis_graph(nodes, edges, directed=False):
     """Generates an HTML representation of a network using PyVis and renders it in Streamlit."""
+    chart_colors = _chart_colors()
     net = Network(
         height="500px",
         width="100%",
-        bgcolor="#1E1E1E",
-        font_color="#FFFFFF",
+        bgcolor=chart_colors["pyvis_bg"],
+        font_color=chart_colors["text"],
         directed=directed,
         notebook=False
     )
@@ -210,38 +234,39 @@ def generate_risk_gauge_chart(risk_score):
     else:
         bar_color = "#EF553B"  # High/Critical risk - Red
 
+    chart_colors = _chart_colors()
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = risk_score,
         domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Document Risk Score", 'font': {'size': 24, 'color': '#FFFFFF'}},
+        title = {'text': "Document Risk Score", 'font': {'size': 24, 'color': chart_colors["text"]}},
         gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#333333"},
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': chart_colors["grid"]},
             'bar': {'color': bar_color},
             'bgcolor': "rgba(0,0,0,0)",
             'borderwidth': 2,
-            'bordercolor': "#333333",
+            'bordercolor': chart_colors["grid"],
             'steps': [
                 {'range': [0, 39], 'color': "rgba(0, 204, 150, 0.2)"},
                 {'range': [40, 74], 'color': "rgba(254, 203, 82, 0.2)"},
                 {'range': [75, 100], 'color': "rgba(239, 85, 59, 0.2)"}
             ],
             'threshold': {
-                'line': {'color': "white", 'width': 4},
+                'line': {'color': chart_colors["threshold"], 'width': 4},
                 'thickness': 0.75,
                 'value': risk_score
             }
         }
     ))
-    
+
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font={'color': '#E0E0E0', 'family': "Arial"},
+        font={'color': chart_colors["text"], 'family': "Arial"},
         margin=dict(t=50, b=20, l=20, r=20),
         height=350
     )
-    
+
     return fig
 
 def generate_impact_radar_chart(legal: int, financial: int, business: int, compliance: int):
@@ -259,28 +284,29 @@ def generate_impact_radar_chart(legal: int, financial: int, business: int, compl
         name='Impact Profile'
     ))
     
+    chart_colors = _chart_colors()
     fig.update_layout(
         polar=dict(
             radialaxis=dict(
                 visible=True,
                 range=[0, 100],
-                tickcolor="#333333",
-                gridcolor="#333333",
-                tickfont=dict(color="#888888")
+                tickcolor=chart_colors["grid"],
+                gridcolor=chart_colors["grid"],
+                tickfont=dict(color=chart_colors["muted"])
             ),
             angularaxis=dict(
-                gridcolor="#333333",
-                tickfont=dict(color="#E0E0E0", size=14)
+                gridcolor=chart_colors["grid"],
+                tickfont=dict(color=chart_colors["text"], size=14)
             ),
             bgcolor='rgba(0,0,0,0)'
         ),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font={'color': '#E0E0E0'},
+        font={'color': chart_colors["text"]},
         showlegend=False,
         margin=dict(t=40, b=40, l=40, r=40),
         height=400
     )
-    
+
     return fig
 

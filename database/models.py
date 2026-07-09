@@ -17,21 +17,25 @@ def init_db():
 
     db.audit_logs.create_index("timestamp")
 
-    db.counters.update_one(
-        {"_id": "documents"}, {"$setOnInsert": {"seq": 0}}, upsert=True
-    )
-    db.counters.update_one(
-        {"_id": "clauses"}, {"$setOnInsert": {"seq": 0}}, upsert=True
-    )
-    db.counters.update_one(
-        {"_id": "contradictions"}, {"$setOnInsert": {"seq": 0}}, upsert=True
-    )
-    db.counters.update_one(
-        {"_id": "clause_versions"}, {"$setOnInsert": {"seq": 0}}, upsert=True
-    )
-    db.counters.update_one(
-        {"_id": "audit_logs"}, {"$setOnInsert": {"seq": 0}}, upsert=True
-    )
+    # Normalized collections: pages (Stage-1 raw page text), entities and
+    # relationships (persisted knowledge-graph/dependency-graph output,
+    # previously computed and thrown away every page load), and
+    # retrieval_history (one row per QA query, for the hybrid retrieval
+    # pipeline to log against).
+    db.pages.create_index([("doc_id", 1), ("page_number", 1)])
+    db.entities.create_index("doc_id")
+    db.entities.create_index([("doc_id", 1), ("clause_id", 1)])
+    db.relationships.create_index("doc_id")
+    db.retrieval_history.create_index("timestamp")
+    db.retrieval_history.create_index("doc_id_scope")
+
+    for collection_name in (
+        "documents", "clauses", "contradictions", "clause_versions", "audit_logs",
+        "pages", "entities", "relationships", "retrieval_history",
+    ):
+        db.counters.update_one(
+            {"_id": collection_name}, {"$setOnInsert": {"seq": 0}}, upsert=True
+        )
 
     print("MongoDB collections and indexes initialized successfully.")
 

@@ -46,6 +46,22 @@ def get_document_by_id(doc_id):
     return db.documents.find_one({"id": doc_id})
 
 
+def update_document_analysis(doc_id, **fields):
+    """Sets document-level analysis fields (document_type, language,
+    authenticity_score, authenticity_level, parsing_quality_warning,
+    document_risk_score, document_risk_level, document_risk_recommendations)
+    onto the documents collection. Only non-None values are written, so
+    partial updates (e.g. from a node that only computed authenticity) never
+    clobber fields set by another node. MongoDB is schemaless, so documents
+    analyzed before this field existed simply lack it — every reader must
+    use .get(...) with a default, never direct indexing."""
+    updates = {k: v for k, v in fields.items() if v is not None}
+    if not updates:
+        return
+    db = get_db()
+    db.documents.update_one({"id": doc_id}, {"$set": updates})
+
+
 def delete_document(doc_id):
     """Deletes a document and all related data."""
     db = get_db()
@@ -66,7 +82,7 @@ def delete_document(doc_id):
 
 def add_clause(doc_id, section_name, text_content, page_num=None,
                classification=None, risk_category=None, risk_level="None",
-               explanation=None, simplification=None):
+               explanation=None, simplification=None, risk_score=None):
     """Inserts a clause and returns its integer ID."""
     db = get_db()
     clause_id = _get_next_id("clauses")
@@ -80,10 +96,50 @@ def add_clause(doc_id, section_name, text_content, page_num=None,
         "classification": classification,
         "risk_category": risk_category,
         "risk_level": risk_level,
+        "risk_score": risk_score,
         "explanation": explanation,
         "simplification": simplification,
     })
     return clause_id
+
+
+def add_clauses_bulk(doc_id, clauses):
+    """Bulk-inserts clauses for a document, incrementing the ID counter once
+    (via a single $inc) instead of once per clause. `clauses` items are
+    dicts using the same keys as add_clause's parameters. Returns the
+    assigned integer IDs in the same order as `clauses`."""
+    if not clauses:
+        return []
+
+    db = get_db()
+    n = len(clauses)
+    result = db.counters.find_one_and_update(
+        {"_id": "clauses"},
+        {"$inc": {"seq": n}},
+        return_document=True,
+    )
+    end_id = result["seq"]
+    ids = list(range(end_id - n + 1, end_id + 1))
+
+    docs = [
+        {
+            "id": clause_id,
+            "doc_id": doc_id,
+            "section_name": c.get("section_name", "Clause"),
+            "text_content": c.get("text_content", ""),
+            "page_num": c.get("page_num"),
+            "version": 1,
+            "classification": c.get("classification"),
+            "risk_category": c.get("risk_category"),
+            "risk_level": c.get("risk_level", "None"),
+            "risk_score": c.get("risk_score"),
+            "explanation": c.get("explanation"),
+            "simplification": c.get("simplification"),
+        }
+        for clause_id, c in zip(ids, clauses)
+    ]
+    db.clauses.insert_many(docs)
+    return ids
 
 
 def get_clauses_for_document(doc_id):
@@ -131,6 +187,31 @@ def get_clause_versions(clause_id):
     return list(db.clause_versions.find({"clause_id": clause_id}).sort("timestamp", -1))
 
 
+def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explanation, source="LLM"):
+    """Overwrites a clause's risk fields (e.g. after an on-demand LLM
+    re-analysis) without touching text_content/version — this isn't an edit
+    to the clause itself, just a re-scoring, so it doesn't create a
+    clause_versions record the way update_clause_text does."""
+    db = get_db()
+    clause = db.clauses.find_one({"id": clause_id})
+    if not clause:
+        raise ValueError(f"Clause with ID {clause_id} not found.")
+
+    db.clauses.update_one(
+        {"id": clause_id},
+        {"$set": {
+            "risk_level": risk_level,
+            "risk_category": risk_category,
+            "risk_score": risk_score,
+            "explanation": explanation,
+        }},
+    )
+    add_audit_log(
+        "clause_risk_reanalysis",
+        f"Re-scored clause ID {clause_id} ('{clause['section_name']}') via {source}: {risk_level} ({risk_score}/100)",
+    )
+
+
 # ── Contradictions ─────────────────────────────────────────────────────────
 
 def add_contradiction(doc_id, clause_id_1, clause_id_2, explanation, severity="Medium"):
@@ -162,6 +243,145 @@ def get_contradictions_for_document(doc_id):
         c["text_2"] = cl2["text_content"] if cl2 else ""
 
     return contradictions
+
+
+# ── Pages (Stage-1 raw per-page text, PDF only) ─────────────────────────────
+
+def add_pages_bulk(doc_id, pages):
+    """Bulk-inserts page records. `pages` items are dicts with
+    `page_number`/`raw_text` (see parser_agent.parse_document_pages). Empty
+    for DOCX/TXT sources, which have no fixed pagination."""
+    if not pages:
+        return []
+
+    db = get_db()
+    n = len(pages)
+    result = db.counters.find_one_and_update(
+        {"_id": "pages"}, {"$inc": {"seq": n}}, return_document=True,
+    )
+    end_id = result["seq"]
+    ids = list(range(end_id - n + 1, end_id + 1))
+
+    docs = [
+        {
+            "id": page_id,
+            "doc_id": doc_id,
+            "page_number": p.get("page_number"),
+            "raw_text": p.get("raw_text", ""),
+        }
+        for page_id, p in zip(ids, pages)
+    ]
+    db.pages.insert_many(docs)
+    return ids
+
+
+def get_pages_for_document(doc_id):
+    """Retrieves all page records for a document, ordered by page number.
+    Returns [] for documents with no page-level data (DOCX/TXT, or
+    documents analyzed before this collection existed)."""
+    db = get_db()
+    return list(db.pages.find({"doc_id": doc_id}).sort("page_number", 1))
+
+
+# ── Entities (persisted knowledge-graph nodes) ──────────────────────────────
+
+def add_entities_bulk(doc_id, entities):
+    """Bulk-inserts entity records. `entities` items are dicts with
+    `clause_id` (None for document-level entities like jurisdiction),
+    `entity_text`, `entity_type` (party/date/money/jurisdiction/penalty/
+    obligation — matches graph_store's node_type vocabulary)."""
+    if not entities:
+        return []
+
+    db = get_db()
+    n = len(entities)
+    result = db.counters.find_one_and_update(
+        {"_id": "entities"}, {"$inc": {"seq": n}}, return_document=True,
+    )
+    end_id = result["seq"]
+    ids = list(range(end_id - n + 1, end_id + 1))
+
+    docs = [
+        {
+            "id": entity_id,
+            "doc_id": doc_id,
+            "clause_id": e.get("clause_id"),
+            "entity_text": e.get("entity_text", ""),
+            "entity_type": e.get("entity_type", "unknown"),
+        }
+        for entity_id, e in zip(ids, entities)
+    ]
+    db.entities.insert_many(docs)
+    return ids
+
+
+def get_entities_for_document(doc_id):
+    """Retrieves all entity records for a document."""
+    db = get_db()
+    return list(db.entities.find({"doc_id": doc_id}))
+
+
+# ── Relationships (persisted knowledge-graph + dependency-graph edges) ──────
+
+def add_relationships_bulk(doc_id, relationships):
+    """Bulk-inserts relationship records unifying knowledge_graph_agent's
+    entity-edges and dependency_agent's clause-edges into one collection.
+    `relationships` items are dicts with `source_type`/`target_type`
+    ('clause' or 'entity'), `source_id`/`target_id` (as strings), `relation`,
+    `explanation`."""
+    if not relationships:
+        return []
+
+    db = get_db()
+    n = len(relationships)
+    result = db.counters.find_one_and_update(
+        {"_id": "relationships"}, {"$inc": {"seq": n}}, return_document=True,
+    )
+    end_id = result["seq"]
+    ids = list(range(end_id - n + 1, end_id + 1))
+
+    docs = [
+        {
+            "id": rel_id,
+            "doc_id": doc_id,
+            "source_type": r.get("source_type"),
+            "source_id": str(r.get("source_id")),
+            "target_type": r.get("target_type"),
+            "target_id": str(r.get("target_id")),
+            "relation": r.get("relation"),
+            "explanation": r.get("explanation"),
+        }
+        for rel_id, r in zip(ids, relationships)
+    ]
+    db.relationships.insert_many(docs)
+    return ids
+
+
+def get_relationships_for_document(doc_id):
+    """Retrieves all relationship records for a document."""
+    db = get_db()
+    return list(db.relationships.find({"doc_id": doc_id}))
+
+
+# ── Retrieval History (one row per QA query) ────────────────────────────────
+
+def log_retrieval(query_text, doc_id_scope=None, detected_intent_filter=None,
+                   retrieved_chunk_ids=None, confidence_score=None, trust_score=None):
+    """Logs one QA query for later analysis. Called from qa_agent.py after
+    each answer_legal_question call."""
+    db = get_db()
+    log_id = _get_next_id("retrieval_history")
+    db.retrieval_history.insert_one({
+        "id": log_id,
+        "query_text": query_text,
+        "doc_id_scope": doc_id_scope,
+        "detected_intent_filter": detected_intent_filter,
+        "retrieved_chunk_ids": retrieved_chunk_ids or [],
+        "confidence_score": confidence_score,
+        "trust_score": trust_score,
+        "timestamp": _now(),
+    })
+    return log_id
 
 
 # ── Audit Logs ─────────────────────────────────────────────────────────────

@@ -1,0 +1,13 @@
+{
+  "modifiers": [
+    {"phrase": "cap of", "weight": 20},
+    {"phrase": "capped at", "weight": 20},
+    {"phrase": "limited to", "weight": 15},
+    {"phrase": "mutual", "weight": 10},
+    {"phrase": "reasonable efforts", "weight": 10},
+    {"phrase": "commercially reasonable", "weight": 10},
+    {"phrase": "best efforts", "weight": 10},
+    {"phrase": "cure period", "weight": 15},
+    {"phrase": "written notice", "weight": 10}
+  ]
+}

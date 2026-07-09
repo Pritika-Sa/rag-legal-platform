@@ -139,14 +139,40 @@ def parse_document_to_json(file_path: str, document_id: Optional[str] = None, ve
 
 
 # Backwards compatibility layer for local orchestrator / regex parsing
+
+# Tried in order, first match wins. Real headings are short, so the shared
+# length guard at each call site shrank from 150 to 80 chars — the looser
+# patterns below (ALL-CAPS, Title-Case) need the tighter bound to avoid
+# matching body text. Lettered sub-headings like "(a)", "(b)" are
+# deliberately NOT treated as section boundaries: they're sub-points within
+# one clause, not new clauses, and treating them as boundaries would
+# fragment clauses instead of fixing under-segmentation.
+SECTION_PATTERNS = [
+    # Numbered: "Section 3.2", "Article IV.", "1. Foo" (original pattern)
+    re.compile(r'^(?:section|clause|article|part)\s+\d+(?:\.\d+)*[:\-\s\.]|^\d+\.\s+[A-Z]', re.IGNORECASE),
+    # Roman numerals: "III. Termination", "Article IV - Payment"
+    re.compile(r'^(?:article\s+)?[IVXLCDM]{1,6}\.?\s*[-:.]?\s*[A-Z]', re.IGNORECASE),
+    # ALL-CAPS heading on its own line, e.g. "TERMINATION", "GOVERNING LAW"
+    # (requires zero lowercase letters, which ordinary body sentences always
+    # have, so this doesn't misfire on paragraph text)
+    re.compile(r'^[A-Z][A-Z0-9 &,\-]{2,59}$'),
+    # Un-numbered legal title in Title Case, e.g. "Governing Law",
+    # "Confidentiality Obligations" (every word must start uppercase, which
+    # ordinary sentences fail on their lowercase function words)
+    re.compile(r'^[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){0,5}$'),
+]
+
+SECTION_HEADING_MAX_CHARS = 80
+
+
+def _is_section_heading(line: str) -> bool:
+    return len(line) < SECTION_HEADING_MAX_CHARS and any(p.match(line) for p in SECTION_PATTERNS)
+
+
 def parse_document(file_path: str) -> List[Dict[str, Any]]:
     """Legacy backward-compatible parser segmenting text into sections using regex or fallback chunks."""
     ext = os.path.splitext(file_path)[1].lower()
-    section_pattern = re.compile(
-        r'^(?:section|clause|article|part)\s+\d+(?:\.\d+)*[:\-\s\.]|^\d+\.\s+[A-Z]', 
-        re.IGNORECASE
-    )
-    
+
     # Fallback to structured chunking if regex segmentation yields fewer than 3 segments
     try:
         sections = []
@@ -158,7 +184,7 @@ def parse_document(file_path: str) -> List[Dict[str, Any]]:
                 text = paragraph.text.strip()
                 if not text:
                     continue
-                if section_pattern.match(text) and len(text) < 150:
+                if _is_section_heading(text):
                     if current_content:
                         sections.append({
                             "section_name": current_section,
@@ -188,7 +214,7 @@ def parse_document(file_path: str) -> List[Dict[str, Any]]:
                         line_str = line.strip()
                         if not line_str:
                             continue
-                        if section_pattern.match(line_str) and len(line_str) < 150:
+                        if _is_section_heading(line_str):
                             if current_content:
                                 sections.append({
                                     "section_name": current_section,
@@ -235,3 +261,52 @@ def parse_document(file_path: str) -> List[Dict[str, Any]]:
                 "page_num": None
             })
         return sections
+
+
+def enforce_chunk_bounds(sections: List[Dict[str, Any]], max_chars: int = 1000,
+                          chunk_overlap: int = 150) -> List[Dict[str, Any]]:
+    """Splits any regex-derived section exceeding max_chars into sub-chunks
+    via RecursiveCharacterTextSplitter (Stage 1 chunking, no LLM). Sections
+    at or under the bound pass through unchanged — short clauses are
+    legitimate and shouldn't be padded or merged. This closes the gap where
+    parse_document()'s regex sections could otherwise be arbitrarily long."""
+    splitter = RecursiveCharacterTextSplitter(chunk_size=max_chars, chunk_overlap=chunk_overlap, length_function=len)
+    bounded = []
+    for sec in sections:
+        text = sec.get("text_content", "")
+        if len(text) <= max_chars:
+            bounded.append(sec)
+            continue
+
+        parts = splitter.split_text(text)
+        total = len(parts)
+        base_name = sec.get("section_name", "Section")
+        for idx, part in enumerate(parts):
+            bounded.append({
+                **sec,
+                "section_name": f"{base_name} (part {idx + 1}/{total})",
+                "text_content": part,
+                "parent_section_name": base_name,
+                "chunk_index": idx,
+            })
+    return bounded
+
+
+def parse_document_pages(file_path: str) -> List[Dict[str, Any]]:
+    """Extracts raw per-page text (Stage 1, no LLM) for the new `pages`
+    Mongo collection. PDF only — python-docx has no reliable page concept,
+    so DOCX/TXT sources return [] (an honest reflection of DOCX having no
+    fixed pagination, not a bug). Additive: parse_document()'s return shape
+    and every existing caller are unaffected."""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext != ".pdf":
+        return []
+
+    pages = []
+    with pdfplumber.open(file_path) as pdf:
+        for page_idx, page in enumerate(pdf.pages):
+            pages.append({
+                "page_number": page_idx + 1,
+                "raw_text": page.extract_text() or "",
+            })
+    return pages

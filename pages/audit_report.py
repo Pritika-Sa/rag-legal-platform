@@ -1,6 +1,7 @@
 import streamlit as st
 from database import crud
 from fpdf import FPDF
+from utils.theme import render_header
 import io
 
 def create_pdf_report(doc_name, clauses, contradictions, audit_result) -> bytes:
@@ -61,8 +62,12 @@ def create_pdf_report(doc_name, clauses, contradictions, audit_result) -> bytes:
     # Return as bytes
     return pdf.output()
 
-st.title("📋 Audit Report Generator (Agent 16)")
-st.markdown("Agent 16 evaluates the entire document analysis for hallucinations and generates a comprehensive PDF Audit Report.")
+render_header(
+    "📋",
+    "Audit Report Generator",
+    "Evaluates the entire document analysis for hallucinations and generates a comprehensive PDF audit report.",
+    badge="Agent 16"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name

@@ -9,15 +9,21 @@ CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "vectorstore/chroma_db")
 COLLECTION_NAME = "legal_documents"
 
 
+_chroma_instance = None
+
+
 def get_chroma_vectorstore() -> Chroma:
-    """Initializes and returns the Chroma vector store with BGE-M3 embeddings."""
-    embeddings = get_embeddings()
-    os.makedirs(CHROMA_DB_PATH, exist_ok=True)
-    return Chroma(
-        persist_directory=CHROMA_DB_PATH,
-        embedding_function=embeddings,
-        collection_name=COLLECTION_NAME,
-    )
+    """Returns a cached Chroma vector store singleton (mirrors get_embeddings())."""
+    global _chroma_instance
+    if _chroma_instance is None:
+        embeddings = get_embeddings()
+        os.makedirs(CHROMA_DB_PATH, exist_ok=True)
+        _chroma_instance = Chroma(
+            persist_directory=CHROMA_DB_PATH,
+            embedding_function=embeddings,
+            collection_name=COLLECTION_NAME,
+        )
+    return _chroma_instance
 
 
 def add_document(document_id: str, version: int, clauses: List[Dict[str, Any]], upload_date: str) -> List[str]:
@@ -32,11 +38,16 @@ def add_document(document_id: str, version: int, clauses: List[Dict[str, Any]], 
         texts.append(c["text_content"])
         meta = {
             "document_id": str(document_id),
-            "version": int(version),
+            "version": int(c.get("version") or version),
             "clause_type": str(c.get("clause_type") or c.get("classification") or "Unclassified"),
             "risk_level": str(c.get("risk_level") or "None"),
             "upload_date": str(upload_date),
             "clause_id": int(c.get("id", idx)),
+            "page_number": int(c.get("page_num") or c.get("page_number") or 0),
+            "chunk_number": int(idx),
+            "importance": int(c.get("importance_score") or 0),
+            "language": str(c.get("language") or "unknown"),
+            "document_type": str(c.get("document_type") or "General Contract"),
         }
         metadatas.append(meta)
         ids.append(f"{document_id}_v{version}_c{meta['clause_id']}")
@@ -104,6 +115,11 @@ def add_clauses_to_vectorstore(clauses: List[Dict[str, Any]]) -> List[str]:
             "text_content": c.get("text_content"),
             "clause_type": c.get("clause_type") or c.get("classification"),
             "risk_level": c.get("risk_level"),
+            "page_num": c.get("page_num"),
+            "importance_score": c.get("importance_score"),
+            "language": c.get("language"),
+            "document_type": c.get("document_type"),
+            "version": c.get("version", 1),
         })
     return add_document(document_id=doc_id, version=1, clauses=mapped_clauses, upload_date=upload_date)
 

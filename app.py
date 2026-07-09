@@ -20,56 +20,187 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom premium styling inject
+# Custom premium styling inject — uses Streamlit's theme CSS custom
+# properties (--background-color, --secondary-background-color, --text-color)
+# instead of hardcoded dark hex values, so the layout stays correct whether
+# the active theme (config default or a user override via Settings) is dark
+# or light.
 st.markdown("""
 <style>
-    /* Dark glassmorphic background styling */
-    .stApp {
-        background: linear-gradient(135deg, #0e1117 0%, #161a24 100%);
-        color: #e0e0e0;
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+    :root {
+        --lq-accent: #636EFA;
+        --lq-accent-2: #8385f7;
+        --lq-accent-dark: #4b4fd1;
+        --lq-success: #00CC96;
+        --lq-warning: #FECB52;
+        --lq-danger: #EF553B;
+        --lq-border: rgba(128, 128, 128, 0.18);
     }
-    
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .stApp {
+        background: var(--background-color);
+        color: var(--text-color);
+    }
+
     /* Elegant Title and Header styling */
     h1, h2, h3 {
-        color: #ffffff !important;
-        font-family: 'Outfit', 'Inter', sans-serif !important;
-        font-weight: 700 !important;
+        color: var(--text-color) !important;
+        font-family: 'Manrope', 'Inter', sans-serif !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.02em;
     }
-    
+
+    /* Reduce default top padding so the shared page header sits closer to the top */
+    .block-container {
+        padding-top: 2.2rem !important;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Shared page header banner (utils.theme.render_header)             */
+    /* ---------------------------------------------------------------- */
+    .page-header {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 22px 26px;
+        margin-bottom: 28px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(99, 110, 250, 0.14) 0%, rgba(99, 110, 250, 0.03) 100%);
+        border: 1px solid rgba(99, 110, 250, 0.25);
+    }
+    .page-header-icon {
+        flex-shrink: 0;
+        width: 54px;
+        height: 54px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.7rem;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--lq-accent-dark) 0%, var(--lq-accent-2) 100%);
+        box-shadow: 0 6px 18px rgba(99, 110, 250, 0.35);
+    }
+    .page-header-text { min-width: 0; }
+    .page-header-title-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .page-header-title {
+        margin: 0 !important;
+        font-size: 1.65rem !important;
+        line-height: 1.2 !important;
+    }
+    .page-header-badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--lq-accent);
+        background: rgba(99, 110, 250, 0.14);
+        border: 1px solid rgba(99, 110, 250, 0.35);
+        padding: 3px 10px;
+        border-radius: 20px;
+    }
+    .page-header-subtitle {
+        margin: 6px 0 0 0 !important;
+        font-size: 0.98rem;
+        color: var(--text-color);
+        opacity: 0.7;
+        max-width: 900px;
+    }
+
     /* Sidebar styling override */
     [data-testid="stSidebar"] {
-        background-color: #0c0e14 !important;
-        border-right: 1px solid #222b3c;
+        background-color: var(--secondary-background-color) !important;
+        border-right: 1px solid rgba(128, 128, 128, 0.2);
     }
-    
-    /* Premium visual KPI cards */
-    .metric-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        padding: 24px;
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 1.2rem;
+    }
+
+    .lq-brand {
         text-align: center;
-        transition: transform 0.3s ease, border-color 0.3s ease;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        padding: 6px 0 16px 0;
     }
-    .metric-card:hover {
-        transform: translateY(-5px);
-        border-color: rgba(99, 110, 250, 0.5);
-    }
-    .metric-val {
-        font-size: 2.2rem;
+    .lq-brand-mark {
+        font-size: 1.55rem;
         font-weight: 800;
-        color: #636EFA;
-        margin-bottom: 5px;
+        font-family: 'Manrope', sans-serif;
+        background: linear-gradient(90deg, var(--lq-accent-dark), var(--lq-accent-2));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
-    .metric-title {
-        font-size: 0.9rem;
+    .lq-brand-tag {
+        font-size: 0.72rem;
         text-transform: uppercase;
-        letter-spacing: 1.5px;
-        color: #a0aabf;
+        letter-spacing: 0.12em;
+        color: var(--text-color);
+        opacity: 0.55;
+        margin-top: 2px;
     }
-    
-    /* Gradient Button */
+    .lq-sidebar-card {
+        background: var(--background-color);
+        border: 1px solid var(--lq-border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 4px;
+        font-size: 0.82rem;
+        opacity: 0.85;
+    }
+    .lq-sidebar-footer {
+        text-align: center;
+        font-size: 0.72rem;
+        opacity: 0.45;
+        margin-top: 18px;
+        letter-spacing: 0.02em;
+    }
+
+    /* Premium visual KPI cards */
+    .metric-card, .lq-metric-card {
+        background: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.18);
+        border-radius: 14px;
+        padding: 22px;
+        text-align: center;
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
+        height: 100%;
+    }
+    .metric-card:hover, .lq-metric-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(99, 110, 250, 0.5);
+        box-shadow: 0 10px 28px rgba(99, 110, 250, 0.18);
+    }
+    .metric-val, .lq-metric-val {
+        font-size: 2.1rem;
+        font-weight: 800;
+        font-family: 'Manrope', sans-serif;
+        color: var(--lq-accent);
+        margin-bottom: 4px;
+    }
+    .lq-metric-icon {
+        font-size: 1.4rem;
+        margin-bottom: 6px;
+    }
+    .metric-title, .lq-metric-title {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 1.3px;
+        color: var(--text-color);
+        opacity: 0.6;
+        font-weight: 600;
+    }
+
+    /* Gradient Button (brand accent, unchanged across themes) */
     .stButton>button {
         background: linear-gradient(90deg, #5e60ce 0%, #636EFA 100%) !important;
         color: white !important;
@@ -84,6 +215,68 @@ st.markdown("""
         transform: translateY(-2px) !important;
         box-shadow: 0 6px 20px rgba(99, 110, 250, 0.5) !important;
     }
+    .stButton>button:active {
+        transform: translateY(0) !important;
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        border-bottom: 1px solid var(--lq-border);
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0 !important;
+        font-weight: 600;
+        padding: 10px 16px !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--lq-accent) !important;
+        background: rgba(99, 110, 250, 0.10) !important;
+    }
+
+    /* Expanders */
+    [data-testid="stExpander"] {
+        border: 1px solid var(--lq-border) !important;
+        border-radius: 10px !important;
+        overflow: hidden;
+    }
+
+    /* Metrics rendered via st.metric */
+    [data-testid="stMetric"] {
+        background: var(--secondary-background-color);
+        border: 1px solid var(--lq-border);
+        border-radius: 14px;
+        padding: 16px 18px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+    [data-testid="stMetricLabel"] {
+        opacity: 0.7;
+        font-weight: 600;
+    }
+
+    /* Dataframes / tables */
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--lq-border);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    /* Chat messages */
+    [data-testid="stChatMessage"] {
+        border: 1px solid var(--lq-border);
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Inputs */
+    .stTextInput input, .stTextArea textarea, .stSelectbox [data-baseweb="select"] {
+        border-radius: 8px !important;
+    }
+
+    /* Slim scrollbar for a cleaner feel */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(99, 110, 250, 0.35); border-radius: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,23 +294,36 @@ if "active_doc_name" not in st.session_state:
     st.session_state.active_doc_name = None
 
 # Sidebar document selector
-st.sidebar.markdown("<h2 style='text-align: center; color: #636EFA;'>⚖️ LQ-LegalAI</h2>", unsafe_allow_html=True)
-st.sidebar.markdown("---")
+st.sidebar.markdown(
+    """
+    <div class="lq-brand">
+        <div class="lq-brand-mark">⚖️ LQ-LegalAI</div>
+        <div class="lq-brand-tag">Legal Intelligence Platform</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 documents = crud.get_all_documents()
 if documents:
     doc_options = {doc['id']: doc['name'] for doc in documents}
-    
+
+    st.sidebar.caption("ACTIVE WORKSPACE DOCUMENT")
     # Selected doc configuration
     selected_id = st.sidebar.selectbox(
         "Active Workspace Document:",
         options=list(doc_options.keys()),
-        format_func=lambda x: doc_options[x]
+        format_func=lambda x: doc_options[x],
+        label_visibility="collapsed"
     )
-    
+
     # Store in session state
     st.session_state.active_doc_id = selected_id
     st.session_state.active_doc_name = doc_options[selected_id]
+    st.sidebar.markdown(
+        f'<div class="lq-sidebar-card">📄 <strong>{doc_options[selected_id]}</strong></div>',
+        unsafe_allow_html=True
+    )
 else:
     st.sidebar.warning("No documents uploaded yet.")
     st.session_state.active_doc_id = None
@@ -125,6 +331,10 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.info("💡 Select a document above, then navigate using the pages menu to audit and interact.")
+st.sidebar.markdown(
+    '<div class="lq-sidebar-footer">LQ-LegalAI &middot; Multi-Agent Legal Intelligence</div>',
+    unsafe_allow_html=True
+)
 
 
 # Define Pages

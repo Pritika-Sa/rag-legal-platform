@@ -1,9 +1,14 @@
 import streamlit as st
 from database import crud
 from agents.simplification_agent import simplify_clause
+from utils.theme import render_header
 
-st.title("✍️ Clause Simplification & Redrafting")
-st.markdown("Convert dense legalese into plain English using Agent 7, edit the redrafts, and save changes.")
+render_header(
+    "✍️",
+    "Clause Simplification & Redrafting",
+    "Convert dense legalese into plain English, edit the redrafts, and save changes.",
+    badge="Agent 7"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -52,8 +57,8 @@ else:
             st.subheader("Original Legalese Text")
             st.markdown(
                 f"""
-                <div style="background-color: #0c0e14; padding: 15px; border-radius: 8px; border-left: 3px solid #636EFA; height: 350px; overflow-y: auto;">
-                    <p style="font-family: monospace; font-size: 0.95rem; line-height: 1.6; color: #a0aabf;">{clause['text_content']}</p>
+                <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border-left: 3px solid #636EFA; height: 350px; overflow-y: auto;">
+                    <p style="font-family: monospace; font-size: 0.95rem; line-height: 1.6; color: var(--text-color); opacity: 0.85;">{clause['text_content']}</p>
                 </div>
                 """,
                 unsafe_allow_html=True

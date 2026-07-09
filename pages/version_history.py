@@ -1,8 +1,13 @@
 import streamlit as st
 from database import crud
+from utils.theme import render_header
 
-st.title("🕒 Version History & Audit Trail")
-st.markdown("Track modifications, view text histories, and restore previous versions of edited contract clauses.")
+render_header(
+    "🕒",
+    "Version History & Audit Trail",
+    "Track modifications, view text histories, and restore previous versions of edited contract clauses.",
+    badge="Governance"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -44,10 +49,10 @@ else:
                     
                     st.markdown(
                         f"""
-                        <div style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <div style="background-color: var(--secondary-background-color); border: 1px solid rgba(128,128,128,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                             <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
                                 <strong style="color: #636EFA; font-size: 1.1rem;">Version {version_num + 1} &rarr; Version {version_num}</strong>
-                                <span style="font-size: 0.85rem; color: #a0aabf;">🕒 {v['timestamp']}</span>
+                                <span style="font-size: 0.85rem; color: var(--text-color); opacity: 0.65;">🕒 {v['timestamp']}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong>Description:</strong> <em>{v['change_description']}</em>

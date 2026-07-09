@@ -1,9 +1,14 @@
 import streamlit as st
 from database import crud
 from agents.contradiction_agent import find_contradictions
+from utils.theme import render_header
 
-st.title("⚖️ Contradiction & Inconsistency Finder")
-st.markdown("Identifies conflicting statements, inconsistent obligations, and contradictory terms within the document using Agent 5.")
+render_header(
+    "⚖️",
+    "Contradiction & Inconsistency Finder",
+    "Identifies conflicting statements, inconsistent obligations, and contradictory terms within the document.",
+    badge="Agent 5"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -36,16 +41,16 @@ else:
                             f"""
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                                 <span style="
-                                    background-color: {sev_color}; 
-                                    color: #121212; 
-                                    font-weight: bold; 
-                                    padding: 3px 10px; 
+                                    background-color: {sev_color};
+                                    color: #121212;
+                                    font-weight: bold;
+                                    padding: 3px 10px;
                                     border-radius: 4px;
                                     font-size: 0.8rem;
                                 ">{c.severity.upper()} SEVERITY</span>
-                                <strong style="color: #a0aabf;">{c.contradiction_type}</strong>
+                                <strong style="color: var(--text-color); opacity: 0.65;">{c.contradiction_type}</strong>
                             </div>
-                            """, 
+                            """,
                             unsafe_allow_html=True
                         )
                         
@@ -55,9 +60,9 @@ else:
                             
                         st.markdown(
                             f"""
-                            <div style="background: rgba(255, 255, 255, 0.05); padding: 12px; border-radius: 6px; border-left: 3px solid {sev_color}; margin-top: 10px; margin-bottom: 15px;">
-                                <strong style="color: #E0E0E0;">Explanation of Conflict:</strong><br>
-                                <span style="font-size: 0.95rem; color: #CCCCCC;">{c.explanation}</span>
+                            <div style="background: rgba(128, 128, 128, 0.15); padding: 12px; border-radius: 6px; border-left: 3px solid {sev_color}; margin-top: 10px; margin-bottom: 15px;">
+                                <strong style="color: var(--text-color);">Explanation of Conflict:</strong><br>
+                                <span style="font-size: 0.95rem; color: var(--text-color); opacity: 0.85;">{c.explanation}</span>
                             </div>
                             """,
                             unsafe_allow_html=True

@@ -1,0 +1,38 @@
+{
+  "Termination": {
+    "keywords": ["terminate", "termination", "expiry", "expiration", "material breach", "cure period", "written notice"],
+    "regex": "\\bterminate\\b|\\btermination\\b|\\bexpiry\\b|\\bexpiration\\b|\\bbreach\\b"
+  },
+  "Liability": {
+    "keywords": ["liability", "limitation of liability", "liable", "cap", "indirect damages", "consequential damages", "special damages"],
+    "regex": "\\bliab(le|ility)\\b|\\blimit(ation)?\\s+of\\s+liability\\b|\\bconsequential\\s+damages\\b"
+  },
+  "Confidentiality": {
+    "keywords": ["confidential", "confidentiality", "non-disclosure", "nda", "proprietary information", "trade secret"],
+    "regex": "\\bconfidential(ity)?\\b|\\bnon-disclosure\\b|\\bproprietary\\b|\\bsecrets?\\b"
+  },
+  "Arbitration": {
+    "keywords": ["arbitration", "arbitrate", "arbitrator", "aaa", "jams", "binding", "dispute resolution"],
+    "regex": "\\barbitrat(e|ion|or)\\b|\\bdispute\\s+resolution\\b"
+  },
+  "Payment": {
+    "keywords": ["payment", "invoice", "fee", "price", "billing", "due date", "interest", "reimbursement"],
+    "regex": "\\bpay(ment)?s?\\b|\\binvoic(es?|ing)\\b|\\bfee(s)?\\b|\\bbill(ing)?\\b"
+  },
+  "Indemnity": {
+    "keywords": ["indemnify", "indemnity", "indemnification", "hold harmless", "defend", "losses", "claims"],
+    "regex": "\\bindemni(fy|t|fication)\\b|\\bhold\\s+harmless\\b|\\bdefend\\b"
+  },
+  "Compliance": {
+    "keywords": ["compliance", "comply", "applicable laws", "regulations", "sanctions", "anti-corruption", "fcpa"],
+    "regex": "\\bcompli(ance|y|ied)\\b|\\bapplicable\\s+laws?\\b|\\bregulations?\\b"
+  },
+  "Jurisdiction": {
+    "keywords": ["jurisdiction", "governing law", "venue", "forum", "courts of", "governed by", "state of"],
+    "regex": "\\bjurisdiction\\b|\\bgoverning\\s+law\\b|\\bvenue\\b|\\bforum\\b"
+  },
+  "Force Majeure": {
+    "keywords": ["force majeure", "act of god", "natural disaster", "unforeseeable", "war", "strike", "riot", "fire"],
+    "regex": "\\bforce\\s+majeure\\b|\\bact\\s+of\\s+god\\b|\\bunforeseeable\\b"
+  }
+}

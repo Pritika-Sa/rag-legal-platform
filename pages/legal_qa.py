@@ -1,9 +1,14 @@
 import streamlit as st
 from database import crud
 from agents.qa_agent import answer_legal_question
+from utils.theme import render_header
 
-st.title("💬 Semantic Q&A & Search (Agent 9)")
-st.markdown("Ask questions about the contract repository or the active document. Agent 9 (LQ-RAG) uses hybrid retrieval and strict audit validation to answer.")
+render_header(
+    "💬",
+    "Semantic Q&A & Search",
+    "Ask questions about the contract repository or the active document. LQ-RAG uses hybrid retrieval and strict audit validation to answer.",
+    badge="Agent 9"
+)
 
 # Query configuration
 search_scope = st.radio("Search Scope:", ["Active Document Only", "All Documents in Workspace"])
@@ -39,7 +44,7 @@ for msg in st.session_state.messages:
             st.markdown(
                 f"""
                 <div style="margin-top: 10px; margin-bottom: 10px;">
-                    <span style="background-color: rgba(255,255,255,0.05); border: 1px solid {score_color}; color: {score_color}; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
+                    <span style="background-color: rgba(128,128,128,0.15); border: 1px solid {score_color}; color: {score_color}; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
                         Agent Confidence: {res.confidence_score}/100
                     </span>
                 </div>
@@ -96,7 +101,7 @@ if prompt := st.chat_input("Ask a legal question... (e.g., 'What is the liabilit
                 st.markdown(
                     f"""
                     <div style="margin-top: 10px; margin-bottom: 10px;">
-                        <span style="background-color: rgba(255,255,255,0.05); border: 1px solid {score_color}; color: {score_color}; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
+                        <span style="background-color: rgba(128,128,128,0.15); border: 1px solid {score_color}; color: {score_color}; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
                             Agent Confidence: {result.confidence_score}/100
                         </span>
                     </div>
@@ -160,7 +165,7 @@ if prompt := st.chat_input("Ask a legal question... (e.g., 'What is the liabilit
                         ts_color = "#00CC96" if eval_result.trust_score >= 80 else "#FECB52" if eval_result.trust_score >= 50 else "#EF553B"
                         st.markdown(
                             f"""
-                            <div style="background-color: rgba(255,255,255,0.02); border-left: 4px solid {ts_color}; padding: 10px; border-radius: 4px;">
+                            <div style="background-color: rgba(128,128,128,0.12); border-left: 4px solid {ts_color}; padding: 10px; border-radius: 4px;">
                                 <strong>Trust Score:</strong> {eval_result.trust_score}/100
                             </div>
                             """, unsafe_allow_html=True
@@ -169,7 +174,7 @@ if prompt := st.chat_input("Ask a legal question... (e.g., 'What is the liabilit
                         hs_color = "#00CC96" if eval_result.hallucination_score < 20 else "#FECB52" if eval_result.hallucination_score < 50 else "#EF553B"
                         st.markdown(
                             f"""
-                            <div style="background-color: rgba(255,255,255,0.02); border-left: 4px solid {hs_color}; padding: 10px; border-radius: 4px;">
+                            <div style="background-color: rgba(128,128,128,0.12); border-left: 4px solid {hs_color}; padding: 10px; border-radius: 4px;">
                                 <strong>Hallucination Score:</strong> {eval_result.hallucination_score}/100
                             </div>
                             """, unsafe_allow_html=True

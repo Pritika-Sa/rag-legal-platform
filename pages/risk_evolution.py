@@ -3,9 +3,14 @@ import pandas as pd
 from database import crud
 from utils import visualizer
 from agents.risk_evolution_agent import analyze_risk_evolution
+from utils.theme import render_header
 
-st.title("📈 Contract Risk Profile Evolution (Agent 13)")
-st.markdown("Track the progress of risk mitigation across different iterations and versions of the agreement, analyzed by Agent 13.")
+render_header(
+    "📈",
+    "Contract Risk Profile Evolution",
+    "Track the progress of risk mitigation across different iterations and versions of the agreement.",
+    badge="Agent 13"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name

@@ -1,12 +1,15 @@
 import streamlit as st
 from database import crud
 from utils import visualizer
+from utils.theme import render_header, render_metric_card
 
-st.markdown("<h1 style='text-align: center; color: #636EFA;'>LQ-LegalAI Platform</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-size: 1.2rem; color: #a0aabf;'>Next-generation AI Legal Intelligence Platform powered by LangGraph, Groq & MongoDB</p>", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
+render_header(
+    "📊",
+    "Platform Dashboard",
+    "Next-generation AI legal intelligence platform powered by LangGraph, Groq & MongoDB.",
+    badge="Overview"
+)
 
-st.title("📊 Platform Dashboard")
 # Get active document from session state
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -15,6 +18,8 @@ if doc_id:
     st.info(f"Viewing metrics for Active Document: **{doc_name}**")
     metrics = crud.get_dashboard_metrics(doc_id=doc_id)
     clauses = crud.get_clauses_for_document(doc_id=doc_id)
+    active_doc = crud.get_document_by_id(doc_id)
+    authenticity_display = f"{active_doc.get('authenticity_score')}/100" if active_doc and active_doc.get("authenticity_score") is not None else "Not yet analyzed"
 else:
     st.warning("No active document selected. Showing aggregate workspace metrics.")
     metrics = crud.get_dashboard_metrics()
@@ -23,17 +28,24 @@ else:
     documents = crud.get_all_documents()
     for doc in documents:
         clauses.extend(crud.get_clauses_for_document(doc['id']))
+    scored_docs = [d for d in documents if d.get("authenticity_score") is not None]
+    authenticity_display = (
+        f"{round(sum(d['authenticity_score'] for d in scored_docs) / len(scored_docs))}/100 (avg)"
+        if scored_docs else "Not yet analyzed"
+    )
 
 # Visual Metrics Grid
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    st.metric(label="Documents", value=metrics["total_documents"])
+    st.markdown(render_metric_card("Documents", metrics["total_documents"], "📁", "var(--lq-accent)"), unsafe_allow_html=True)
 with col2:
-    st.metric(label="Total Clauses", value=metrics["total_clauses"])
+    st.markdown(render_metric_card("Total Clauses", metrics["total_clauses"], "📑", "var(--lq-accent)"), unsafe_allow_html=True)
 with col3:
-    st.metric(label="Risky Clauses (High/Med)", value=metrics["risky_clauses"])
+    st.markdown(render_metric_card("Risky Clauses (High/Med)", metrics["risky_clauses"], "⚠️", "var(--lq-warning)"), unsafe_allow_html=True)
 with col4:
-    st.metric(label="Contradictions", value=metrics["total_contradictions"])
+    st.markdown(render_metric_card("Contradictions", metrics["total_contradictions"], "⚡", "var(--lq-danger)"), unsafe_allow_html=True)
+with col5:
+    st.markdown(render_metric_card("Authenticity Score", authenticity_display, "🛡️", "var(--lq-success)"), unsafe_allow_html=True)
 
 st.markdown("---")
 

@@ -2,9 +2,15 @@ import streamlit as st
 from database import crud
 from utils.visualizer import render_pyvis_graph
 from agents.knowledge_graph_agent import extract_knowledge_graph
+from agents.graph_store import describe_kg_edges
+from utils.theme import render_header
 
-st.title("🕸️ Legal Entity Knowledge Graph (Agent 11)")
-st.markdown("Interactive visualization showing the key parties, signing dates, governing jurisdictions, obligations, payments, and penalties.")
+render_header(
+    "🕸️",
+    "Legal Entity Knowledge Graph",
+    "Interactive visualization showing key parties, signing dates, governing jurisdictions, obligations, payments, and penalties.",
+    badge="Agent 11"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -49,7 +55,18 @@ else:
                             - 🔴 **Red**: Penalties & Key Risks
                             """
                         )
-                        
+
+                        # Plain-language explanation of what the diagram shows —
+                        # deterministic, derived from the same graph_data above,
+                        # since the visual relationships alone can be hard to
+                        # read at a glance.
+                        edge_descriptions = describe_kg_edges(graph_data)
+                        if edge_descriptions:
+                            st.markdown("### 📝 Relationship Explanations")
+                            st.caption("Plain-language reading of every connection shown in the diagram above.")
+                            for desc in edge_descriptions:
+                                st.markdown(f"- {desc}")
+
                         crud.add_audit_log("knowledge_graph_generation", f"Generated knowledge graph for document '{doc_name}' with Agent 11")
                 except Exception as e:
                     st.error(f"Failed to generate knowledge graph: {e}")

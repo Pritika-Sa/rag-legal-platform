@@ -1,0 +1,13 @@
+{
+  "modifiers": [
+    {"phrase": "uncapped", "weight": 25},
+    {"phrase": "unlimited", "weight": 20},
+    {"phrase": "without limitation", "weight": 20},
+    {"phrase": "sole discretion", "weight": 15},
+    {"phrase": "irrevocable", "weight": 15},
+    {"phrase": "penalty", "weight": 15},
+    {"phrase": "liquidated damages", "weight": 20},
+    {"phrase": "immediate termination", "weight": 20},
+    {"phrase": "forfeit", "weight": 15}
+  ]
+}

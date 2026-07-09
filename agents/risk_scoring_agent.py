@@ -1,6 +1,22 @@
+import logging
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
-from utils.llm_client import invoke_llm_structured
+
+logger = logging.getLogger(__name__)
+
+RISK_POINTS = {"High": 90, "Medium": 55, "Low": 25, "None": 5}
+
+RECOMMENDATION_TABLE = {
+    "Liability": "Negotiate a liability cap and carve out indirect/consequential damages.",
+    "Indemnity": "Narrow the indemnification scope and add a mutual indemnity provision if one-sided.",
+    "Termination": "Add a cure period and require written notice before termination takes effect.",
+    "Payment": "Clarify payment timelines, late-fee interest rates, and dispute procedures.",
+    "Confidentiality": "Confirm confidentiality survives termination and define a reasonable duration.",
+    "Compliance": "Verify the compliance obligations map to your actual regulatory footprint.",
+    "Jurisdiction": "Confirm the governing law/venue is acceptable and not unduly burdensome.",
+    "Force Majeure": "Ensure force majeure events are clearly enumerated and notice periods are workable.",
+    "Arbitration": "Confirm arbitration rules/seat are balanced and not overly costly for either party.",
+}
 
 
 class DocumentRiskScoreResult(BaseModel):
@@ -11,25 +27,130 @@ class DocumentRiskScoreResult(BaseModel):
     recommendations: str = Field(description="Actionable recommendations to mitigate the identified risks.")
 
 
-def assess_document_risk(document_name: str, clauses_data: List[Dict[str, Any]]) -> DocumentRiskScoreResult:
-    """Uses Groq LLM to evaluate overall document risk based on its clauses."""
-    system_instruction = (
-        "You are an expert Chief Legal Officer reviewing a contract. "
-        "Analyze the provided clauses and their risk categories. "
-        "Calculate an aggregate 'risk_score' from 0 to 100. "
-        "Assign a 'risk_level' from: Low, Medium, High, Critical. "
-        "Identify the most problematic 'affected_clauses'. "
-        "Provide detailed 'reasoning' and actionable 'recommendations'."
+def _aggregate(document_name: str, scored: List[tuple], method_note: str) -> DocumentRiskScoreResult:
+    """Shared aggregation math for both the rule-based and LLM-based paths:
+    weighted average of per-clause points + a concentration bonus if a large
+    share of clauses are High risk, mapped to a 4-tier document risk_level."""
+    total = len(scored)
+    avg_points = sum(points for _, _, _, points in scored) / total
+    high_count = sum(1 for _, _, level, _ in scored if level == "High")
+    high_ratio = high_count / total
+
+    concentration_bonus = 10 if high_ratio > 0.3 else 0
+    risk_score = max(0, min(100, round(avg_points + concentration_bonus)))
+
+    if risk_score >= 80:
+        risk_level = "Critical"
+    elif risk_score >= 60:
+        risk_level = "High"
+    elif risk_score >= 35:
+        risk_level = "Medium"
+    else:
+        risk_level = "Low"
+
+    top_contributors = sorted(scored, key=lambda s: s[3], reverse=True)[:5]
+    affected_clauses = [section for section, _, level, _ in top_contributors if level in ("High", "Medium")]
+
+    reasoning = (
+        f"{document_name}: {total} clauses assessed, {high_count} at High risk "
+        f"({round(high_ratio * 100)}%). Aggregate score {risk_score}/100 derived from a "
+        f"weighted average of per-clause risk scores ({method_note})"
+        + (" with a concentration bonus applied due to a high share of High-risk clauses." if concentration_bonus else ".")
     )
 
-    clauses_text = ""
+    recommended_types = {classification for _, classification, level, _ in top_contributors if level in ("High", "Medium")}
+    recommendations = " ".join(
+        RECOMMENDATION_TABLE[t] for t in recommended_types if t in RECOMMENDATION_TABLE
+    ) or "No specific high-risk clause types identified; review the document for general legal soundness."
+
+    return DocumentRiskScoreResult(
+        risk_score=risk_score,
+        risk_level=risk_level,
+        affected_clauses=affected_clauses,
+        reasoning=reasoning,
+        recommendations=recommendations,
+    )
+
+
+def assess_document_risk(document_name: str, clauses_data: List[Dict[str, Any]]) -> DocumentRiskScoreResult:
+    """Rule-based document-level risk aggregation (Stage 2, no LLM) — this is
+    the fast, Groq-quota-safe default computed automatically at ingestion.
+
+    Replaces the original approach of concatenating every clause's full text
+    into one LLM prompt (the primary source of the truncation/quota issues)
+    with a weighted average of already-computed per-clause risk levels.
+    """
+    if not clauses_data:
+        return DocumentRiskScoreResult(
+            risk_score=0, risk_level="Low", affected_clauses=[],
+            reasoning="No clauses were available to assess.", recommendations="N/A",
+        )
+
+    scored = []
     for i, row in enumerate(clauses_data):
-        c = dict(row) if hasattr(row, 'keys') else row
-        section = c.get('section_name', f"Clause {i+1}")
-        text = c.get('text_content', '')
-        prelim_risk = c.get('risk_level', 'Unknown')
-        clauses_text += f"\n--- {section} (Preliminary Risk: {prelim_risk}) ---\n{text}\n"
+        c = dict(row) if hasattr(row, "keys") else row
+        section = c.get("section_name", f"Clause {i + 1}")
+        level = c.get("risk_level", "None")
+        # Prefer the real content-derived numeric score (analyzer_agent's
+        # score_risk_points) when present; fall back to the fixed per-level
+        # table for clauses persisted before that field existed.
+        points = c["risk_score"] if c.get("risk_score") is not None else RISK_POINTS.get(level, 5)
+        scored.append((section, c.get("classification", "General"), level, points))
 
-    prompt = f"Document Name: {document_name}\n\nDocument Clauses:\n{clauses_text}"
+    return _aggregate(document_name, scored, "rule-based phrase scan")
 
-    return invoke_llm_structured(system_instruction, prompt, DocumentRiskScoreResult, temperature=0.1)
+
+def assess_document_risk_with_llm(document_name: str, clauses_data: List[Dict[str, Any]]) -> DocumentRiskScoreResult:
+    """On-demand LLM document-level risk aggregation — triggered only by the
+    'Generate Document Risk Score' button (pages/risk_analysis.py), never
+    during ingestion. Re-assesses every clause with a real LLM call (via
+    analyzer_agent.analyze_clause_risk_with_llm) instead of the rule-based
+    phrase scan, persists each corrected score back onto its clause record
+    (so clause_analysis.py/risk_analysis.py's per-clause views reflect it
+    too), then runs the same aggregation math as the rule-based path.
+
+    Deliberately calls the LLM once PER CLAUSE rather than concatenating all
+    clause text into a single prompt — that single-giant-prompt approach was
+    the original cause of the truncation/quota errors this app used to hit.
+    Per-clause prompts stay small regardless of document size; the tradeoff
+    is wall-clock time (one Groq round trip per clause) instead of prompt
+    size, which is why this is an explicit, on-demand action rather than
+    something that runs automatically on every upload.
+    """
+    from agents.analyzer_agent import analyze_clause_risk_with_llm
+    from database import crud
+
+    if not clauses_data:
+        return DocumentRiskScoreResult(
+            risk_score=0, risk_level="Low", affected_clauses=[],
+            reasoning="No clauses were available to assess.", recommendations="N/A",
+        )
+
+    scored = []
+    for i, row in enumerate(clauses_data):
+        c = dict(row) if hasattr(row, "keys") else row
+        section = c.get("section_name", f"Clause {i + 1}")
+        classification = c.get("classification", "General")
+        text = c.get("text_content", "")
+        clause_id = c.get("id")
+
+        try:
+            llm_result = analyze_clause_risk_with_llm(section, text)
+            level, points = llm_result.risk_level, llm_result.risk_score
+            if clause_id is not None:
+                try:
+                    crud.update_clause_risk(
+                        clause_id=clause_id, risk_level=llm_result.risk_level,
+                        risk_category=llm_result.risk_category, risk_score=llm_result.risk_score,
+                        explanation=llm_result.explanation, source="LLM (document-level re-analysis)",
+                    )
+                except Exception:
+                    logger.exception(f"Failed to persist LLM risk re-score for clause {clause_id}")
+        except Exception as e:
+            logger.warning(f"LLM risk assessment failed for clause '{section}', keeping prior score: {e}")
+            level = c.get("risk_level", "None")
+            points = c["risk_score"] if c.get("risk_score") is not None else RISK_POINTS.get(level, 5)
+
+        scored.append((section, classification, level, points))
+
+    return _aggregate(document_name, scored, "Groq LLM re-assessment of every clause")

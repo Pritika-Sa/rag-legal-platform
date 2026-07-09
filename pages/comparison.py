@@ -2,9 +2,14 @@ import streamlit as st
 import plotly.graph_objects as go
 from database import crud
 from agents.comparison_agent import compare_documents
+from utils.theme import is_light_theme, render_header
 
-st.title("🔀 Agreement Comparison (Agent 10)")
-st.markdown("Select two agreements to analyze structural differences, clause variations, and potential vulnerabilities between them using Agent 10.")
+render_header(
+    "🔀",
+    "Agreement Comparison",
+    "Select two agreements to analyze structural differences, clause variations, and potential vulnerabilities between them.",
+    badge="Agent 10"
+)
 
 documents = crud.get_all_documents()
 
@@ -34,20 +39,22 @@ else:
                     result = compare_documents(clauses_a, clauses_b, doc_a_name, doc_b_name)
                     
                     # Display Similarity Score Gauge
+                    chart_text_color = "#31333F" if is_light_theme() else "#FFFFFF"
+                    chart_grid_color = "#D5D5D5" if is_light_theme() else "#333333"
                     fig = go.Figure(go.Indicator(
                         mode = "gauge+number",
                         value = result.similarity_score,
                         domain = {'x': [0, 1], 'y': [0, 1]},
-                        title = {'text': "Similarity Score", 'font': {'size': 24, 'color': '#FFFFFF'}},
+                        title = {'text': "Similarity Score", 'font': {'size': 24, 'color': chart_text_color}},
                         gauge = {
-                            'axis': {'range': [0, 100], 'tickcolor': "#333333"},
+                            'axis': {'range': [0, 100], 'tickcolor': chart_grid_color},
                             'bar': {'color': "#636EFA"},
                             'bgcolor': "rgba(0,0,0,0)",
                             'borderwidth': 2,
-                            'bordercolor': "#333333",
+                            'bordercolor': chart_grid_color,
                         }
                     ))
-                    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': '#E0E0E0'}, height=300)
+                    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': chart_text_color}, height=300)
                     st.plotly_chart(fig, use_container_width=True)
                     
                     st.markdown("### 📋 Change Summary")

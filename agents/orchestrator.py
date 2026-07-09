@@ -1,9 +1,12 @@
 import os
 import hashlib
-from typing import TypedDict, List, Dict, Any
+import logging
+from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 
-from agents.parser_agent import parse_document
+logger = logging.getLogger(__name__)
+
+from agents.parser_agent import parse_document, parse_document_pages, enforce_chunk_bounds
 from agents.clause_identifier_agent import identify_clauses
 from agents.importance_agent import assess_clause_importance
 from agents.analyzer_agent import analyze_clause
@@ -12,7 +15,10 @@ from agents.contradiction_agent import find_contradictions
 from agents.impact_agent import analyze_clause_impact
 from agents.knowledge_graph_agent import extract_knowledge_graph
 from agents.dependency_agent import extract_clause_dependencies
+from agents.authenticity_agent import assess_document_authenticity
 from agents.audit_agent import perform_macro_audit
+from agents import graph_store
+from utils.doc_classifier import detect_language, detect_document_type
 
 from database import crud
 from vectorstore import chroma_client
@@ -29,6 +35,17 @@ class AgentState(TypedDict):
     contradictions: List[Dict[str, Any]]
     audit_score: int
     error: str
+    # Additive fields from the config-driven-rules / hybrid-retrieval / graph
+    # / authenticity refactor. None of these hold full document text.
+    parsing_quality_warning: Optional[str]
+    document_type: str
+    language: str
+    document_risk_score: int
+    document_risk_level: str
+    document_risk_recommendations: str
+    authenticity_score: int
+    authenticity_level: str
+    authenticity_warnings: List[str]
 
 
 def get_file_hash(file_path):
@@ -39,6 +56,8 @@ def get_file_hash(file_path):
 
 
 def parse_document_node(state: AgentState) -> Dict[str, Any]:
+    """Stage 1 (no LLM): parse the file, enforce the 800-1000 char chunk
+    bound on every section, and persist raw per-page text (PDF only)."""
     file_path = state["file_path"]
     doc_name = os.path.basename(file_path)
     try:
@@ -48,107 +67,170 @@ def parse_document_node(state: AgentState) -> Dict[str, Any]:
             return {"doc_name": doc_name, "doc_hash": doc_hash, "doc_id": existing_doc['id'],
                     "error": "Document already analyzed."}
 
-        raw_sections = parse_document(file_path)
+        raw_sections = enforce_chunk_bounds(parse_document(file_path))
         doc_id = crud.add_document(doc_name, file_path, doc_hash)
+
+        pages = parse_document_pages(file_path)
+        if pages:
+            crud.add_pages_bulk(doc_id, pages)
+
         return {"doc_name": doc_name, "doc_hash": doc_hash, "doc_id": doc_id,
                 "raw_sections": raw_sections, "error": ""}
     except Exception as e:
         return {"error": f"Parsing failed: {str(e)}"}
 
 
-def clause_identification_node(state: AgentState) -> Dict[str, Any]:
+def clause_processing_node(state: AgentState) -> Dict[str, Any]:
+    """Stage 2 (no LLM): identification, importance scoring, and risk
+    classification in a single batch pass, followed by bulk persistence and
+    document-level risk aggregation. Also computes document-level language/
+    type (threaded onto every clause's Chroma metadata) and the clause-count
+    parsing-quality check."""
     if state.get("error"):
         return {}
-    full_text = "\n".join([s['text_content'] for s in state["raw_sections"]])
+
+    raw_sections = state["raw_sections"]
+    blocks = [f"{s['section_name']}\n{s['text_content']}" for s in raw_sections]
+    full_text = "\n\n".join(blocks)
+    page_mapping = [
+        {"page_number": s.get("page_num"), "text_content": block}
+        for s, block in zip(raw_sections, blocks)
+    ]
+
+    doc_language = detect_language(full_text)
+    doc_type = detect_document_type(full_text)
+
     try:
-        identified_objects = identify_clauses(full_text)
-        identified = []
-        for obj in identified_objects:
-            identified.append({
+        identified_objects = identify_clauses(full_text, page_mapping)
+        identified = [
+            {
                 "section_name": obj.clause_type,
                 "text_content": obj.clause_text,
                 "classification": obj.clause_type,
                 "confidence_score": obj.confidence_score,
-            })
-
+                "page_num": obj.page_number,
+            }
+            for obj in identified_objects
+        ]
         if not identified:
-            for sec in state["raw_sections"]:
-                identified.append({
-                    "section_name": sec["section_name"],
-                    "text_content": sec["text_content"],
-                    "classification": "General",
-                })
+            identified = [
+                {"section_name": sec["section_name"], "text_content": sec["text_content"], "classification": "General"}
+                for sec in raw_sections
+            ]
     except Exception as e:
-        print(f"Clause ID failed: {e}")
+        logger.exception(f"Clause identification failed (doc_id={state.get('doc_id')}): {e}")
         identified = [
-            {"section_name": s["section_name"], "text_content": s["text_content"], "classification": "General"}
-            for s in state["raw_sections"]
+            {"section_name": sec["section_name"], "text_content": sec["text_content"], "classification": "General"}
+            for sec in raw_sections
         ]
 
-    return {"identified_clauses": identified}
+    parsing_quality_warning = None
+    if len(identified) < 3:
+        parsing_quality_warning = "Possible parsing issue or poor clause extraction."
+        logger.warning(f"{parsing_quality_warning} doc_id={state.get('doc_id')} identified={len(identified)}")
+        crud.add_audit_log(
+            "parsing_quality_warning",
+            f"Doc {state['doc_id']} ('{state['doc_name']}') produced only {len(identified)} identified clauses.",
+        )
 
-
-def importance_detection_node(state: AgentState) -> Dict[str, Any]:
-    if state.get("error"):
-        return {}
-    clauses = state["identified_clauses"]
-
-    # Sequential processing
-    for c in clauses:
+    for c in identified:
         try:
-            res = assess_clause_importance(c.get("section_name", "Clause"), c["text_content"])
-            c["importance_score"] = res.importance_score
-            c["importance_category"] = res.importance_category
+            importance = assess_clause_importance(c.get("section_name", "Clause"), c["text_content"])
+            c["importance_score"] = importance.importance_score
+            c["importance_category"] = importance.importance_category
         except Exception:
             c["importance_score"] = 0
             c["importance_category"] = "Informational"
 
-    return {"identified_clauses": clauses}
-
-
-def risk_analysis_node(state: AgentState) -> Dict[str, Any]:
-    if state.get("error"):
-        return {}
-    clauses = state["identified_clauses"]
-
-    for c in clauses:
         try:
-            res = analyze_clause(c.get("section_name", "Clause"), c["text_content"])
-            c["risk_level"] = res.risk_level
-            c["risk_category"] = res.risk_category
-            c["explanation"] = res.explanation
-            c["simplification"] = res.simplification
-        except Exception:
+            analysis = analyze_clause(c.get("section_name", "Clause"), c["text_content"])
+            c["risk_level"] = analysis.risk_level
+            c["risk_category"] = analysis.risk_category
+            c["risk_score"] = analysis.risk_score
+            c["explanation"] = analysis.explanation
+        except Exception as e:
+            logger.exception(
+                f"Clause analysis failed for '{c.get('section_name', 'Clause')}' "
+                f"(doc_id={state.get('doc_id')}): {e}"
+            )
             c["risk_level"] = "None"
             c["risk_category"] = "Unknown"
+            c["risk_score"] = None
             c["explanation"] = "Error analyzing risk"
-            c["simplification"] = c["text_content"]
 
+    clause_ids = crud.add_clauses_bulk(state["doc_id"], identified)
     db_clauses = []
-    for sec in clauses:
-        clause_id = crud.add_clause(
-            doc_id=state["doc_id"],
-            section_name=sec.get("section_name", "Clause"),
-            text_content=sec["text_content"],
-            page_num=sec.get("page_num", 1),
-            classification=sec.get("classification", "General"),
-            risk_category=sec.get("risk_category", "Unknown"),
-            risk_level=sec.get("risk_level", "None"),
-            explanation=sec.get("explanation", ""),
-            simplification=sec.get("simplification", ""),
-        )
+    for clause_id, sec in zip(clause_ids, identified):
         sec["id"] = clause_id
+        # Bug fix: this was never set, so every clause's Chroma
+        # "document_id" metadata silently fell back to "unknown_doc",
+        # breaking per-document filtering (see chroma_client.add_clauses_to_vectorstore).
+        sec["doc_id"] = state["doc_id"]
+        sec["language"] = doc_language
+        sec["document_type"] = doc_type
         db_clauses.append(sec)
 
+    document_risk_score, document_risk_level, document_risk_recommendations = 0, "Low", ""
     try:
         doc_risk = assess_document_risk(state["doc_name"], db_clauses)
         crud.add_audit_log("document_risk",
                            f"Doc {state['doc_id']} scored {doc_risk.risk_score}/100 ({doc_risk.risk_level})")
+        document_risk_score = doc_risk.risk_score
+        document_risk_level = doc_risk.risk_level
+        document_risk_recommendations = doc_risk.recommendations
     except Exception:
         pass
 
     chroma_client.add_clauses_to_vectorstore(db_clauses)
-    return {"db_clauses": db_clauses}
+
+    crud.update_document_analysis(
+        state["doc_id"],
+        document_type=doc_type,
+        language=doc_language,
+        parsing_quality_warning=parsing_quality_warning,
+        document_risk_score=document_risk_score,
+        document_risk_level=document_risk_level,
+    )
+
+    return {
+        "identified_clauses": identified,
+        "db_clauses": db_clauses,
+        "parsing_quality_warning": parsing_quality_warning,
+        "document_type": doc_type,
+        "language": doc_language,
+        "document_risk_score": document_risk_score,
+        "document_risk_level": document_risk_level,
+        "document_risk_recommendations": document_risk_recommendations,
+    }
+
+
+def authenticity_check_node(state: AgentState) -> Dict[str, Any]:
+    """Deterministic authenticity check (Stage 2, no LLM) — deliberately
+    separate from legal risk scoring. Runs after clause_processing because
+    it needs both raw_sections (structural checks) and db_clauses
+    (duplicate/mandatory-clause checks)."""
+    if state.get("error"):
+        return {}
+
+    full_text = "\n\n".join(f"{s['section_name']}\n{s['text_content']}" for s in state["raw_sections"])
+    try:
+        result = assess_document_authenticity(
+            state["doc_name"], state["raw_sections"], state["db_clauses"], full_text,
+            document_type=state.get("document_type"),
+        )
+        crud.update_document_analysis(
+            state["doc_id"],
+            authenticity_score=result.authenticity_score,
+            authenticity_level=result.authenticity_level,
+        )
+        return {
+            "authenticity_score": result.authenticity_score,
+            "authenticity_level": result.authenticity_level,
+            "authenticity_warnings": result.fraud_indicators + result.missing_information,
+        }
+    except Exception as e:
+        logger.exception(f"Authenticity check failed (doc_id={state.get('doc_id')}): {e}")
+        return {"authenticity_score": 0, "authenticity_level": "Unknown", "authenticity_warnings": []}
 
 
 def contradiction_detection_node(state: AgentState) -> Dict[str, Any]:
@@ -183,30 +265,46 @@ def contradiction_detection_node(state: AgentState) -> Dict[str, Any]:
         return {"contradictions": []}
 
 
-def impact_analysis_node(state: AgentState) -> Dict[str, Any]:
+def graph_and_impact_node(state: AgentState) -> Dict[str, Any]:
+    """Merges the old impact_analysis, knowledge_graph, and dependency_graph
+    nodes; no longer gated behind a conditional edge since none of these
+    steps calls an LLM. Also unifies both graph agents' output into one
+    NetworkX graph (agents/graph_store.py) and persists it as entities/
+    relationships rows — knowledge_graph_agent.py and dependency_agent.py
+    themselves are untouched, so pages/knowledge_graph.py and
+    pages/dependency_graph.py keep working exactly as before."""
+    if state.get("error"):
+        return {}
+
     high_risk_clauses = [c for c in state["db_clauses"] if c.get("risk_level") == "High"]
     for c in high_risk_clauses[:2]:
         try:
             analyze_clause_impact(c.get("section_name", "Clause"), c["text_content"])
         except Exception:
             pass
-    return {}
 
-
-def knowledge_graph_node(state: AgentState) -> Dict[str, Any]:
     full_text = "\n".join([c['text_content'] for c in state["db_clauses"]][:5])
+    kg_data = {"nodes": [], "edges": []}
     try:
-        extract_knowledge_graph(state["doc_name"], full_text)
+        kg_data = extract_knowledge_graph(state["doc_name"], full_text)
     except Exception:
         pass
-    return {}
 
-
-def dependency_graph_node(state: AgentState) -> Dict[str, Any]:
+    dependency_edges = []
     try:
-        extract_clause_dependencies(state["db_clauses"])
+        dependency_edges = extract_clause_dependencies(state["db_clauses"])
     except Exception:
         pass
+
+    try:
+        graph_store.build_document_graph(state["doc_id"], state["db_clauses"], kg_data, dependency_edges)
+        entities = graph_store.flatten_entities(state["doc_id"], kg_data)
+        relationships = graph_store.flatten_relationships(kg_data, dependency_edges)
+        crud.add_entities_bulk(state["doc_id"], entities)
+        crud.add_relationships_bulk(state["doc_id"], relationships)
+    except Exception:
+        logger.exception(f"Graph persistence failed (doc_id={state.get('doc_id')})")
+
     return {}
 
 
@@ -219,43 +317,22 @@ def audit_agent_node(state: AgentState) -> Dict[str, Any]:
         return {"audit_score": 0}
 
 
-def route_after_contradiction(state: AgentState) -> str:
-    high_risks = any(c.get("risk_level") == "High" for c in state.get("db_clauses", []))
-    has_contradictions = len(state.get("contradictions", [])) > 0
-    if high_risks or has_contradictions:
-        return "impact_analysis"
-    else:
-        return "audit_agent"
-
-
 def build_orchestrator():
     workflow = StateGraph(AgentState)
 
     workflow.add_node("parse_document", parse_document_node)
-    workflow.add_node("clause_identification", clause_identification_node)
-    workflow.add_node("importance_detection", importance_detection_node)
-    workflow.add_node("risk_analysis", risk_analysis_node)
+    workflow.add_node("clause_processing", clause_processing_node)
+    workflow.add_node("authenticity_check", authenticity_check_node)
     workflow.add_node("contradiction_detection", contradiction_detection_node)
-    workflow.add_node("impact_analysis", impact_analysis_node)
-    workflow.add_node("knowledge_graph", knowledge_graph_node)
-    workflow.add_node("dependency_graph", dependency_graph_node)
+    workflow.add_node("graph_and_impact", graph_and_impact_node)
     workflow.add_node("audit_agent", audit_agent_node)
 
     workflow.set_entry_point("parse_document")
-    workflow.add_edge("parse_document", "clause_identification")
-    workflow.add_edge("clause_identification", "importance_detection")
-    workflow.add_edge("importance_detection", "risk_analysis")
-    workflow.add_edge("risk_analysis", "contradiction_detection")
-
-    workflow.add_conditional_edges(
-        "contradiction_detection",
-        route_after_contradiction,
-        {"impact_analysis": "impact_analysis", "audit_agent": "audit_agent"},
-    )
-
-    workflow.add_edge("impact_analysis", "knowledge_graph")
-    workflow.add_edge("knowledge_graph", "dependency_graph")
-    workflow.add_edge("dependency_graph", "audit_agent")
+    workflow.add_edge("parse_document", "clause_processing")
+    workflow.add_edge("clause_processing", "authenticity_check")
+    workflow.add_edge("authenticity_check", "contradiction_detection")
+    workflow.add_edge("contradiction_detection", "graph_and_impact")
+    workflow.add_edge("graph_and_impact", "audit_agent")
     workflow.add_edge("audit_agent", END)
 
     return workflow.compile()
@@ -269,5 +346,9 @@ def run_orchestration(file_path: str) -> Dict[str, Any]:
         "raw_sections": [], "identified_clauses": [],
         "db_clauses": [], "contradictions": [],
         "audit_score": 0, "error": "",
+        "parsing_quality_warning": None,
+        "document_type": "General Contract", "language": "unknown",
+        "document_risk_score": 0, "document_risk_level": "Low", "document_risk_recommendations": "",
+        "authenticity_score": 0, "authenticity_level": "Unknown", "authenticity_warnings": [],
     }
     return app.invoke(initial_state)

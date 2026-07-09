@@ -1,6 +1,10 @@
+import difflib
+from collections import Counter
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
-from utils.llm_client import invoke_llm_structured
+
+UNCHANGED_THRESHOLD = 0.97
+MODIFIED_THRESHOLD = 0.55
 
 
 class ComparisonResult(BaseModel):
@@ -13,30 +17,79 @@ class ComparisonResult(BaseModel):
     difference_report: str = Field(description="Detailed difference report of textual and semantic variations")
 
 
+def _risk_distribution(clauses: List[Dict[str, Any]]) -> Counter:
+    return Counter(c.get("risk_level", "None") for c in clauses)
+
+
 def compare_documents(clauses_a: List[Dict[str, Any]], clauses_b: List[Dict[str, Any]],
                       doc_a_name: str, doc_b_name: str) -> ComparisonResult:
-    """Agent 10: Document Comparison Agent."""
-    text_a = ""
-    for c in clauses_a:
-        text_a += f"[{c.get('section_name', 'Unknown')}]\n{c.get('text_content', '')}\n\n"
-
-    text_b = ""
-    for c in clauses_b:
-        text_b += f"[{c.get('section_name', 'Unknown')}]\n{c.get('text_content', '')}\n\n"
-
-    system_instruction = (
-        "You are an expert Document Comparison Agent. Compare Document A and Document B. "
-        "Detect added clauses, removed clauses, modified clauses, and risk changes. "
-        "Generate a similarity score (0-100), a change summary, and a detailed difference report."
-    )
-    prompt = f"Document A ({doc_a_name}):\n{text_a}\n\nDocument B ({doc_b_name}):\n{text_b}"
-
-    try:
-        return invoke_llm_structured(system_instruction, prompt, ComparisonResult)
-    except Exception as e:
-        print(f"Error in comparison agent: {e}")
+    """Rule-based document comparison (Stage 2, no LLM) via difflib text
+    similarity. Replaces sending both documents' full clause text to an LLM
+    in a single prompt — the worst prompt-size offender in the pipeline."""
+    if not clauses_a and not clauses_b:
         return ComparisonResult(
-            similarity_score=0, change_summary=f"Error: {e}",
+            similarity_score=100, change_summary="Both documents are empty.",
             added_clauses=[], removed_clauses=[], modified_clauses=[],
-            risk_changes="N/A", difference_report="N/A",
+            risk_changes="No clauses to compare.", difference_report="N/A",
         )
+
+    remaining_b = list(clauses_b)
+    unchanged, modified, removed = [], [], []
+    diff_snippets = []
+    ratios = []
+
+    for a in clauses_a:
+        a_text = a.get("text_content", "")
+        a_name = a.get("section_name", "Unknown")
+
+        best_idx, best_ratio = None, 0.0
+        for idx, b in enumerate(remaining_b):
+            ratio = difflib.SequenceMatcher(None, a_text, b.get("text_content", "")).ratio()
+            if ratio > best_ratio:
+                best_ratio, best_idx = ratio, idx
+
+        if best_idx is not None and best_ratio >= MODIFIED_THRESHOLD:
+            b = remaining_b.pop(best_idx)
+            ratios.append(best_ratio)
+            if best_ratio >= UNCHANGED_THRESHOLD:
+                unchanged.append(a_name)
+            else:
+                modified.append(a_name)
+                diff_lines = list(difflib.unified_diff(
+                    a_text.splitlines(), b.get("text_content", "").splitlines(),
+                    fromfile=f"A: {a_name}", tofile=f"B: {b.get('section_name', 'Unknown')}", lineterm="",
+                ))
+                diff_snippets.append("\n".join(diff_lines[:12]))
+        else:
+            removed.append(a_name)
+            ratios.append(0.0)
+
+    added = [b.get("section_name", "Unknown") for b in remaining_b]
+    similarity_score = round(100 * (sum(ratios) / len(ratios))) if ratios else 0
+
+    dist_a, dist_b = _risk_distribution(clauses_a), _risk_distribution(clauses_b)
+    risk_changes = (
+        f"Document A risk distribution: {dict(dist_a)}. Document B risk distribution: {dict(dist_b)}. "
+        f"High-risk clause count changed from {dist_a.get('High', 0)} to {dist_b.get('High', 0)}."
+    )
+
+    change_summary = (
+        f"Comparing '{doc_a_name}' to '{doc_b_name}': {len(unchanged)} clauses unchanged, "
+        f"{len(modified)} modified, {len(removed)} removed, {len(added)} added. "
+        f"Overall textual similarity: {similarity_score}%."
+    )
+
+    difference_report = (
+        "\n\n".join(diff_snippets) if diff_snippets
+        else "No materially modified clauses were detected between the two documents."
+    )
+
+    return ComparisonResult(
+        similarity_score=similarity_score,
+        change_summary=change_summary,
+        added_clauses=added,
+        removed_clauses=removed,
+        modified_clauses=modified,
+        risk_changes=risk_changes,
+        difference_report=difference_report,
+    )

@@ -1,0 +1,4 @@
+{
+  "critical_tier_types": ["Liability", "Indemnity", "Termination", "Jurisdiction"],
+  "important_tier_types": ["Payment", "Confidentiality", "Compliance"]
+}

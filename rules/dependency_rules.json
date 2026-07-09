@@ -1,0 +1,11 @@
+{
+  "dependencies": [
+    {"source": "Termination", "target": "Liability", "relation": "triggers"},
+    {"source": "Termination", "target": "Indemnity", "relation": "triggers"},
+    {"source": "Payment", "target": "Compliance", "relation": "subject_to"},
+    {"source": "Payment", "target": "Force Majeure", "relation": "suspended_by"},
+    {"source": "Indemnity", "target": "Liability", "relation": "limits"},
+    {"source": "Confidentiality", "target": "Arbitration", "relation": "enforced_via"},
+    {"source": "Compliance", "target": "Jurisdiction", "relation": "governed_by"}
+  ]
+}

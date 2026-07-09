@@ -4,8 +4,14 @@ import json
 from database import crud
 from agents.clause_identifier_agent import identify_clauses
 from agents.importance_agent import assess_clause_importance
+from utils.theme import render_header
 
-st.title("🔍 Clause Analysis & Classification")
+render_header(
+    "🔍",
+    "Clause Analysis & Classification",
+    "Browse clause breakdowns, run hybrid identification, and audit clause importance and impact.",
+    badge="Agents 2 · 3 · 6"
+)
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
@@ -55,14 +61,28 @@ else:
     if not clauses:
         st.info("No clauses parsed for this document.")
     else:
+        PREVIEW_CHARS = 400
+
+        def truncate_preview(text: str, max_chars: int = PREVIEW_CHARS):
+            """Cuts long clause text at the nearest word boundary so cards
+            across every tab stay scannable instead of showing a wall of
+            text; returns (preview_text, was_truncated)."""
+            if not text or len(text) <= max_chars:
+                return text, False
+            cut = text[:max_chars]
+            last_space = cut.rfind(" ")
+            if last_space > max_chars * 0.6:
+                cut = cut[:last_space]
+            return cut.rstrip() + " …", True
+
         # Create Streamlit tabs
         tab1, tab2, tab3, tab4 = st.tabs([
-            "Standard Clause Breakdown", 
+            "Standard Clause Breakdown",
             "Hybrid Clause Identification Agent (Agent 2)",
             "Clause Importance Auditor (Agent 3)",
             "Clause Impact Analysis (Agent 6)"
         ])
-        
+
         with tab1:
             # Get unique classifications for filtering
             classifications = list(set([c['classification'] for c in clauses if c['classification']]))
@@ -87,23 +107,32 @@ else:
                     risk_color = "#FECB52"
                 elif c['risk_level'] == "Low":
                     risk_color = "#636EFA"
-                    
+
+                clause_text = c['text_content'] or ""
+                preview_text, was_truncated = truncate_preview(clause_text)
+                length_badge = (
+                    f'<span style="background: rgba(128,128,128,0.15); color: var(--text-color); '
+                    f'padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; margin-left: 10px;">'
+                    f'📏 {len(clause_text):,} chars</span>'
+                    if was_truncated else ""
+                )
+
                 st.markdown(
                     f"""
                     <div style="
-                        border: 1px solid rgba(255, 255, 255, 0.1); 
-                        border-radius: 8px; 
-                        padding: 15px; 
+                        border: 1px solid rgba(128, 128, 128, 0.25);
+                        border-radius: 8px;
+                        padding: 15px;
                         margin-bottom: 15px;
-                        background: rgba(255,255,255,0.02);
+                        background: var(--secondary-background-color);
                     ">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4 style="margin: 0; color: #FFFFFF;">📌 {c['section_name']}</h4>
+                            <h4 style="margin: 0; color: var(--text-color);">📌 {c['section_name']}</h4>
                             <span style="
-                                background-color: {risk_color}; 
-                                color: #121212; 
-                                font-weight: bold; 
-                                padding: 3px 10px; 
+                                background-color: {risk_color};
+                                color: #121212;
+                                font-weight: bold;
+                                padding: 3px 10px;
                                 border-radius: 4px;
                                 font-size: 0.8rem;
                             ">{c['risk_level'].upper()} RISK</span>
@@ -112,25 +141,55 @@ else:
                             <span style="background: rgba(99, 110, 250, 0.2); color: #636EFA; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500;">
                                 🏷️ Type: {c['classification']}
                             </span>
-                            <span style="background: rgba(255, 255, 255, 0.08); color: #E0E0E0; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; margin-left: 10px;">
+                            <span style="background: rgba(128, 128, 128, 0.18); color: var(--text-color); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; margin-left: 10px;">
                                 📁 Risk Cat: {c['risk_category']}
                             </span>
-                            {f'<span style="background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; margin-left: 10px;">📄 Page {c["page_num"]}</span>' if c['page_num'] else ''}
+                            {f'<span style="background: rgba(128,128,128,0.15); color: var(--text-color); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; margin-left: 10px;">📄 Page {c["page_num"]}</span>' if c['page_num'] else ''}
+                            {length_badge}
                         </div>
-                        <p style="font-size: 0.95rem; line-height: 1.5; color: #CCCCCC; background: #0c0e14; padding: 12px; border-radius: 6px; border-left: 3px solid #636EFA;">
-                            {c['text_content']}
+                        <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color); opacity: 0.85; background: var(--background-color); padding: 12px; border-radius: 6px; border-left: 3px solid #636EFA;">
+                            {preview_text}
                         </p>
                     </div>
-                    """, 
+                    """,
                     unsafe_allow_html=True
                 )
-                
+
+                if was_truncated:
+                    with st.expander(f"📄 Show full clause text ({len(clause_text):,} characters)"):
+                        st.write(clause_text)
+
                 # Show explanations in expansion
                 with st.expander("Show AI Explanation & Risk Analysis"):
                     st.write(c['explanation'] or "No explanation generated.")
                     if c['simplification']:
                         st.markdown("**Plain-English Redraft Suggestion:**")
                         st.write(c['simplification'])
+
+                    st.markdown("---")
+                    st.caption(
+                        "The score above is from the fast rule-based scan run at upload time. "
+                        "If it looks wrong for this clause, ask an LLM to re-read it with full "
+                        "legal judgment (this is on-demand only — it never runs automatically)."
+                    )
+                    if st.button("🤖 Re-analyze Risk with AI", key=f"llm_risk_{c['id']}"):
+                        with st.spinner("Requesting an LLM risk re-assessment for this clause..."):
+                            try:
+                                from agents.analyzer_agent import analyze_clause_risk_with_llm
+                                llm_result = analyze_clause_risk_with_llm(c['section_name'], c['text_content'])
+                                crud.update_clause_risk(
+                                    clause_id=c['id'],
+                                    risk_level=llm_result.risk_level,
+                                    risk_category=llm_result.risk_category,
+                                    risk_score=llm_result.risk_score,
+                                    explanation=llm_result.explanation,
+                                )
+                                st.success(
+                                    f"Updated: {llm_result.risk_level} risk ({llm_result.risk_score}/100). Refreshing..."
+                                )
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"LLM risk re-analysis failed: {e}")
                         
         with tab2:
             st.subheader("🤖 Hybrid Clause Identification Agent")
@@ -139,8 +198,8 @@ else:
                 This agent combines:
                 1. **Rule-based regex patterns** (scanning for structures and numbering).
                 2. **Keyword matching** (broad category vocabularies).
-                3. **Groq LLM semantic verification** (confirming definitions and measuring confidence scores).
-                
+                3. **Deterministic confidence scoring** (regex hit + keyword density + heading match — no LLM call).
+
                 It scans the document for: *Termination, Liability, Confidentiality, Arbitration, Payment, Indemnity, Compliance, Jurisdiction, and Force Majeure*.
                 """
             )
@@ -249,36 +308,49 @@ else:
                                 border_color = "#FECB52" # Orange
                                 badge_color = "rgba(254, 203, 82, 0.15)"
                                 text_color = "#FECB52"
-                                
+
+                            item_text = item['text_content'] or ""
+                            preview_text, was_truncated = truncate_preview(item_text)
+                            length_badge = (
+                                f'<span style="background: rgba(128,128,128,0.15); color: var(--text-color); '
+                                f'padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-left: 8px;">'
+                                f'📏 {len(item_text):,} chars</span>'
+                                if was_truncated else ""
+                            )
+
                             st.markdown(
                                 f"""
                                 <div style="
-                                    border: 1px solid {border_color}; 
-                                    border-radius: 8px; 
-                                    padding: 18px; 
+                                    border: 1px solid {border_color};
+                                    border-radius: 8px;
+                                    padding: 18px;
                                     margin-bottom: 20px;
-                                    background: rgba(255, 255, 255, 0.01);
+                                    background: var(--secondary-background-color);
                                 ">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                        <h4 style="margin: 0; color: #FFFFFF;">📌 {item['section_name']}</h4>
+                                        <h4 style="margin: 0; color: var(--text-color);">📌 {item['section_name']}{length_badge}</h4>
                                         <span style="
-                                            background-color: {badge_color}; 
-                                            color: {text_color}; 
-                                            font-weight: bold; 
-                                            padding: 4px 12px; 
+                                            background-color: {badge_color};
+                                            color: {text_color};
+                                            font-weight: bold;
+                                            padding: 4px 12px;
                                             border-radius: 6px;
                                             font-size: 0.85rem;
                                             border: 1px solid {border_color};
                                         ">{item['category'].upper()} (Score: {item['score']})</span>
                                     </div>
-                                    <p style="font-size: 0.95rem; line-height: 1.5; color: #CCCCCC; background: #0c0e14; padding: 12px; border-radius: 6px;">
-                                        {item['text_content']}
+                                    <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color); opacity: 0.85; background: var(--background-color); padding: 12px; border-radius: 6px;">
+                                        {preview_text}
                                     </p>
                                 </div>
                                 """,
                                 unsafe_allow_html=True
                             )
-                            
+
+                            if was_truncated:
+                                with st.expander(f"📄 Show full clause text ({len(item_text):,} characters)"):
+                                    st.write(item_text)
+
                             # Expanders showing details
                             with st.expander(f"Inspect Significance Details for {item['section_name']}"):
                                 st.markdown(f"**⚖️ Legal Significance Analysis:**")
