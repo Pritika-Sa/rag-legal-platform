@@ -277,6 +277,107 @@ st.markdown("""
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb { background: rgba(99, 110, 250, 0.35); border-radius: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
+
+    /* ---------------------------------------------------------------- */
+    /* Consolidated clause card (pages/clause_analysis.py)               */
+    /* ---------------------------------------------------------------- */
+    .lq-badge {
+        display: inline-block;
+        font-weight: 700;
+        font-size: 0.78rem;
+        padding: 3px 11px;
+        border-radius: 6px;
+        white-space: nowrap;
+        letter-spacing: 0.01em;
+    }
+    .lq-clause-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 14px 0 18px 0;
+        font-size: 0.92rem;
+    }
+    .lq-clause-table tr { border-bottom: 1px solid var(--lq-border); }
+    .lq-clause-table tr:last-child { border-bottom: none; }
+    .lq-clause-table td {
+        padding: 9px 14px;
+        vertical-align: top;
+        color: var(--text-color);
+    }
+    .lq-clause-table td.lq-field {
+        width: 220px;
+        font-weight: 600;
+        opacity: 0.65;
+        white-space: nowrap;
+    }
+    .lq-clause-table tr:nth-child(odd) td {
+        background: rgba(128, 128, 128, 0.05);
+    }
+
+    /* Compact summary "mini cards" above the clause table (five-up grid:
+       Title / Page / Category / Type / Characters) — lighter than
+       .lq-metric-card since dozens of these can appear on one page. */
+    .lq-mini-card {
+        background: var(--secondary-background-color);
+        border: 1px solid var(--lq-border);
+        border-radius: 8px;
+        padding: 8px 12px;
+        height: 100%;
+    }
+    .lq-mini-card-icon { font-size: 0.85rem; opacity: 0.7; line-height: 1; }
+    .lq-mini-card-value {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--text-color);
+        margin-top: 3px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .lq-mini-card-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-color);
+        opacity: 0.55;
+        font-weight: 600;
+        margin-top: 1px;
+    }
+
+    /* Compact lazy-load toggle rows ("View Original Clause Text" and
+       "Simplified Version") — styled to match the native st.expander rows
+       used elsewhere (e.g. the Mitigation Strategy / Re-analyze Risk
+       controls on the Risk Analysis page) instead of the app's default
+       gradient CTA button. Both have to stay real st.button widgets (not
+       st.expander) so their body only executes once opened — Streamlit
+       still executes a collapsed expander's body every rerun, which would
+       defeat lazy-loading for large clause text and would re-call the
+       Simplification agent on every single page interaction. Scoped via
+       the button's own key-derived class (all such buttons share the
+       "btn_clause_" key prefix) so no other button in the app is affected. */
+    div[class*="st-key-btn_clause_"] .stButton>button {
+        background: var(--secondary-background-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--lq-border) !important;
+        box-shadow: none !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+        padding: 8px 14px !important;
+        border-radius: 8px !important;
+    }
+    /* Streamlit centers the label via an inner wrapper div, not the button
+       itself -- override that div directly or `justify-content` above has
+       no visible effect and the label stays centered. */
+    div[class*="st-key-btn_clause_"] .stButton>button > div {
+        justify-content: flex-start !important;
+        width: 100%;
+    }
+    div[class*="st-key-btn_clause_"] .stButton>button:hover {
+        border-color: rgba(99, 110, 250, 0.5) !important;
+        transform: none !important;
+        box-shadow: 0 2px 8px rgba(99, 110, 250, 0.12) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 

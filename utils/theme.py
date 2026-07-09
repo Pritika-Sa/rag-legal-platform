@@ -51,3 +51,26 @@ def render_metric_card(label: str, value, icon: str = "", accent: str = "var(--l
         <div class="lq-metric-title">{label}</div>
     </div>
     """
+
+
+def render_mini_card(label: str, value, icon: str = "") -> str:
+    """Returns HTML for a compact summary card (title/page/category/type/
+    character-count row above a clause's info table) — lighter-weight than
+    render_metric_card since many of these render per page."""
+    return f"""
+    <div class="lq-mini-card">
+        <div class="lq-mini-card-icon">{icon}</div>
+        <div class="lq-mini-card-value" title="{value}">{value}</div>
+        <div class="lq-mini-card-label">{label}</div>
+    </div>
+    """
+
+
+def render_badge(text: str, color: str, text_color: str = "#121212") -> str:
+    """Returns HTML for a single colored status pill (risk/importance/compliance/
+    authenticity/contradiction indicators). Caller embeds it inline inside a larger
+    st.markdown(unsafe_allow_html=True) block — it is not a standalone widget."""
+    return (
+        f'<span class="lq-badge" style="background-color:{color}; color:{text_color};">'
+        f'{text}</span>'
+    )

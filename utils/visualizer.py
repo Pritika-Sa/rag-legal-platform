@@ -310,3 +310,47 @@ def generate_impact_radar_chart(legal: int, financial: int, business: int, compl
 
     return fig
 
+
+def generate_clause_impact_radar_chart(impact_level: int, business_impact: int, legal_impact: int):
+    """Generates a 3-axis Plotly Radar Chart for the consolidated Clause Analysis
+    card's Impact Analysis section (Impact Level, Business Impact, Legal Impact) —
+    a lighter alternative to generate_impact_radar_chart's 4-axis version."""
+    categories = ['Impact Level', 'Business Impact', 'Legal Impact']
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatterpolar(
+        r=[impact_level, business_impact, legal_impact, impact_level],  # close the loop
+        theta=categories + [categories[0]],
+        fill='toself',
+        fillcolor='rgba(99, 110, 250, 0.5)',
+        line=dict(color='#636EFA', width=3),
+        name='Clause Impact'
+    ))
+
+    chart_colors = _chart_colors()
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickcolor=chart_colors["grid"],
+                gridcolor=chart_colors["grid"],
+                tickfont=dict(color=chart_colors["muted"])
+            ),
+            angularaxis=dict(
+                gridcolor=chart_colors["grid"],
+                tickfont=dict(color=chart_colors["text"], size=14)
+            ),
+            bgcolor='rgba(0,0,0,0)'
+        ),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font={'color': chart_colors["text"]},
+        showlegend=False,
+        margin=dict(t=40, b=40, l=40, r=40),
+        height=380
+    )
+
+    return fig
+

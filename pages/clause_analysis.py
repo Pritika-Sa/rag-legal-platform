@@ -1,416 +1,322 @@
-import streamlit as st
-import pandas as pd
 import json
+import statistics
+
+import streamlit as st
+
 from database import crud
-from agents.clause_identifier_agent import identify_clauses
 from agents.importance_agent import assess_clause_importance
-from utils.theme import render_header
+from agents.impact_agent import analyze_clause_impact
+from agents.rule_engine import detect_clause_type
+from utils.theme import render_header, render_metric_card, render_mini_card, render_badge
+from utils.visualizer import generate_clause_impact_radar_chart
 
 render_header(
     "🔍",
-    "Clause Analysis & Classification",
-    "Browse clause breakdowns, run hybrid identification, and audit clause importance and impact.",
-    badge="Agents 2 · 3 · 6"
+    "Clause Analysis",
+    "A clause-centric view — identification, importance, compliance, and impact for every clause "
+    "in one place. Risk scoring, dependencies, contradictions, translation, authenticity, and "
+    "version comparisons live on their own dedicated pages.",
+    badge="Agents 2 · 3 · 6 · 7"
 )
 
 doc_id = st.session_state.active_doc_id
 doc_name = st.session_state.active_doc_name
 
-# Cached function for Agent 3 Importance Audit
-@st.cache_data(show_spinner=True)
-def run_importance_audit(clauses_json: str) -> list:
-    """Invokes Agent 3 to evaluate legal significance and financial impact of each clause."""
+RISK_COLORS = {"High": "#EF553B", "Medium": "#FECB52", "Low": "#636EFA", "None": "#00CC96"}
+IMPORTANCE_COLORS = {"Critical": "#EF553B", "Important": "#FECB52", "Informational": "#00CC96"}
+COMPLIANCE_COLORS = {"Needs Review": "#EF553B", "Monitor": "#FECB52", "Compliant": "#00CC96"}
+IMPACT_LEVEL_COLORS = {"High": "#EF553B", "Medium": "#FECB52", "Low": "#00CC96"}
+
+
+def _fmt(value, default="—"):
+    if value is None or value == "":
+        return default
+    return value
+
+
+def _compliance_status(compliance_impact):
+    if compliance_impact is None:
+        return "Unknown"
+    if compliance_impact >= 70:
+        return "Needs Review"
+    if compliance_impact >= 40:
+        return "Monitor"
+    return "Compliant"
+
+
+def _impact_level_score(legal, financial, business, compliance):
+    scores = [v for v in (legal, financial, business, compliance) if v is not None]
+    if not scores:
+        return None
+    return round(statistics.mean(scores))
+
+
+def _impact_level_label(score):
+    if score is None:
+        return None
+    if score >= 70:
+        return "High"
+    if score >= 40:
+        return "Medium"
+    return "Low"
+
+
+def _confidence_tier(confidence):
+    if confidence is None:
+        return "Unscored"
+    if confidence >= 0.7:
+        return "High-Confidence Match"
+    if confidence >= 0.4:
+        return "Moderate-Confidence Match"
+    return "Low-Confidence Match"
+
+
+# Cached consolidated compute for Agent 2 (identification confidence), Agent 3
+# (importance), and Agent 6 (impact) — all rule-based/no-LLM, so it's cheap to
+# run eagerly for every clause instead of gating each behind its own button.
+@st.cache_data(show_spinner="Running clause intelligence (identification, importance, impact)...")
+def compute_clause_intelligence(clauses_json: str) -> dict:
     clauses_list = json.loads(clauses_json)
-    audited_results = []
-    
+    intel = {}
     for c in clauses_list:
+        section_name = c.get("section_name") or "Clause"
+        text = c.get("text_content") or ""
+
         try:
-            audit = assess_clause_importance(c['section_name'], c['text_content'])
-            audited_results.append({
-                "id": c['id'],
-                "section_name": c['section_name'],
-                "text_content": c['text_content'],
-                "score": audit.importance_score,
-                "category": audit.importance_category,
-                "reasoning": audit.reasoning,
-                "legal_analysis": audit.legal_significance_analysis,
-                "financial_analysis": audit.financial_impact_analysis
-            })
-        except Exception as e:
-            audited_results.append({
-                "id": c['id'],
-                "section_name": c['section_name'],
-                "text_content": c['text_content'],
-                "score": 20,
-                "category": "Informational",
-                "reasoning": f"Analysis failed: {str(e)}",
-                "legal_analysis": "Error occurred",
-                "financial_analysis": "Error occurred"
-            })
-            
-    return audited_results
+            importance = assess_clause_importance(section_name, text)
+        except Exception:
+            importance = None
+
+        try:
+            impact = analyze_clause_impact(section_name, text)
+        except Exception:
+            impact = None
+
+        try:
+            _clause_type, confidence = detect_clause_type(f"{section_name}\n{text}")
+        except Exception:
+            confidence = None
+
+        intel[c["id"]] = {
+            "importance_score": importance.importance_score if importance else None,
+            "importance_category": importance.importance_category if importance else "Informational",
+            "legal_impact": impact.legal_impact if impact else None,
+            "financial_impact": impact.financial_impact if impact else None,
+            "business_impact": impact.business_impact if impact else None,
+            "compliance_impact": impact.compliance_impact if impact else None,
+            "confidence_score": confidence,
+        }
+    return intel
+
+
+def render_toggle(flag_key: str, button_key: str, label: str) -> bool:
+    """Compact lazy-load toggle row, styled via CSS (see app.py, scoped to
+    the button's key) to match the compact bordered look of native expander
+    rows elsewhere in the app. Deliberately a plain st.button + session_state
+    flag, not st.expander — Streamlit still executes and ships an expander's
+    body to the client even while collapsed, which would (a) defeat
+    lazy-loading for very large clause text, and (b) call Agent 7 on every
+    single rerun for every clause instead of only when the user opens that
+    clause's Simplified Version.
+
+    Uses two distinct keys because Streamlit forbids writing to
+    st.session_state under a key that's also bound to a widget."""
+    if flag_key not in st.session_state:
+        st.session_state[flag_key] = False
+    arrow = "▼" if st.session_state[flag_key] else "▶"
+    if st.button(f"{arrow}  {label}", key=button_key, width="stretch"):
+        st.session_state[flag_key] = not st.session_state[flag_key]
+        st.rerun()
+    return st.session_state[flag_key]
+
 
 if not doc_id:
     st.warning("⚠️ Please select an active document in the sidebar or upload one to begin.")
 else:
     st.info(f"Analyzing Document: **{doc_name}**")
-    
-    # Get all clauses
+
     clauses = crud.get_clauses_for_document(doc_id)
-    
+
     if not clauses:
         st.info("No clauses parsed for this document.")
     else:
-        PREVIEW_CHARS = 400
+        serializable_clauses = [
+            {
+                "id": c["id"],
+                "section_name": c["section_name"],
+                "text_content": c["text_content"],
+                "classification": c.get("classification"),
+            }
+            for c in clauses
+        ]
+        clauses_json = json.dumps(serializable_clauses)
 
-        def truncate_preview(text: str, max_chars: int = PREVIEW_CHARS):
-            """Cuts long clause text at the nearest word boundary so cards
-            across every tab stay scannable instead of showing a wall of
-            text; returns (preview_text, was_truncated)."""
-            if not text or len(text) <= max_chars:
-                return text, False
-            cut = text[:max_chars]
-            last_space = cut.rfind(" ")
-            if last_space > max_chars * 0.6:
-                cut = cut[:last_space]
-            return cut.rstrip() + " …", True
+        intel_by_clause = compute_clause_intelligence(clauses_json)
 
-        # Create Streamlit tabs
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Standard Clause Breakdown",
-            "Hybrid Clause Identification Agent (Agent 2)",
-            "Clause Importance Auditor (Agent 3)",
-            "Clause Impact Analysis (Agent 6)"
-        ])
+        # ── KPI summary row ─────────────────────────────────────────────
+        high_risk_count = sum(1 for c in clauses if c.get("risk_level") == "High")
+        importance_scores = [
+            intel_by_clause[c["id"]]["importance_score"]
+            for c in clauses if intel_by_clause.get(c["id"], {}).get("importance_score") is not None
+        ]
+        avg_importance = round(statistics.mean(importance_scores)) if importance_scores else 0
 
-        with tab1:
-            # Get unique classifications for filtering
-            classifications = list(set([c['classification'] for c in clauses if c['classification']]))
-            classifications.insert(0, "All")
-            
-            # Filter selector
-            selected_class = st.selectbox("Filter by Clause Classification:", classifications)
-            
-            # Filter clauses
-            filtered_clauses = clauses
-            if selected_class != "All":
-                filtered_clauses = [c for c in clauses if c['classification'] == selected_class]
-                
-            st.markdown(f"Showing **{len(filtered_clauses)}** clauses:")
-            
-            for c in filtered_clauses:
-                # Colors for risk levels
-                risk_color = "#00CC96"  # None
-                if c['risk_level'] == "High":
-                    risk_color = "#EF553B"
-                elif c['risk_level'] == "Medium":
-                    risk_color = "#FECB52"
-                elif c['risk_level'] == "Low":
-                    risk_color = "#636EFA"
+        kpi_cols = st.columns(3)
+        with kpi_cols[0]:
+            st.markdown(render_metric_card("Total Clauses", len(clauses), "📑"), unsafe_allow_html=True)
+        with kpi_cols[1]:
+            st.markdown(render_metric_card("High Risk Clauses", high_risk_count, "🔴", accent="var(--lq-danger)"), unsafe_allow_html=True)
+        with kpi_cols[2]:
+            st.markdown(render_metric_card("Avg Importance", f"{avg_importance}/100", "🎯"), unsafe_allow_html=True)
 
-                clause_text = c['text_content'] or ""
-                preview_text, was_truncated = truncate_preview(clause_text)
-                length_badge = (
-                    f'<span style="background: rgba(128,128,128,0.15); color: var(--text-color); '
-                    f'padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; margin-left: 10px;">'
-                    f'📏 {len(clause_text):,} chars</span>'
-                    if was_truncated else ""
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Filters ──────────────────────────────────────────────────────
+        filter_cols = st.columns(4)
+        classifications = ["All"] + sorted({c["classification"] for c in clauses if c.get("classification")})
+        risk_levels = ["All", "High", "Medium", "Low", "None"]
+        importance_levels = ["All", "Critical", "Important", "Informational"]
+
+        selected_class = filter_cols[0].selectbox("Clause Type:", classifications)
+        selected_risk = filter_cols[1].selectbox("Risk Level:", risk_levels)
+        selected_importance = filter_cols[2].selectbox("Importance Level:", importance_levels)
+        search_text = filter_cols[3].text_input("Search title or text:", placeholder="e.g. termination, liability…")
+
+        filtered_clauses = clauses
+        if selected_class != "All":
+            filtered_clauses = [c for c in filtered_clauses if c.get("classification") == selected_class]
+        if selected_risk != "All":
+            filtered_clauses = [c for c in filtered_clauses if (c.get("risk_level") or "None") == selected_risk]
+        if selected_importance != "All":
+            filtered_clauses = [
+                c for c in filtered_clauses
+                if intel_by_clause.get(c["id"], {}).get("importance_category") == selected_importance
+            ]
+        if search_text:
+            needle = search_text.lower()
+            filtered_clauses = [
+                c for c in filtered_clauses
+                if needle in (c.get("section_name") or "").lower() or needle in (c.get("text_content") or "").lower()
+            ]
+
+        st.markdown(f"Showing **{len(filtered_clauses)}** of **{len(clauses)}** clauses:")
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── One compact card per clause (plain bordered container, not an
+        # expander — real st.expander can't nest inside another, and Impact
+        # Analysis below needs to be a genuine expander to match the app's
+        # native compact-row style) ───────────────────────────────────────
+        for c in filtered_clauses:
+            cid = c["id"]
+            intel = intel_by_clause.get(cid, {})
+            risk_level = c.get("risk_level") or "None"
+            importance_category = intel.get("importance_category", "Informational")
+            compliance_status = _compliance_status(intel.get("compliance_impact"))
+            text_content = c.get("text_content") or ""
+            confidence_score = intel.get("confidence_score")
+
+            with st.container(border=True):
+                # ── Summary cards (Title / Page / Category / Type / Characters) ──
+                card_cols = st.columns([1.6, 0.8, 1, 1, 1])
+                with card_cols[0]:
+                    st.markdown(render_mini_card("Clause Title", c["section_name"], "📌"), unsafe_allow_html=True)
+                with card_cols[1]:
+                    st.markdown(render_mini_card("Page", _fmt(c.get("page_num"), "N/A"), "📄"), unsafe_allow_html=True)
+                with card_cols[2]:
+                    st.markdown(render_mini_card("Category", _fmt(c.get("risk_category")), "🏷"), unsafe_allow_html=True)
+                with card_cols[3]:
+                    st.markdown(render_mini_card("Type", _fmt(c.get("classification"), "Unclassified"), "📑"), unsafe_allow_html=True)
+                with card_cols[4]:
+                    st.markdown(render_mini_card("Characters", f"{len(text_content):,}", "🔤"), unsafe_allow_html=True)
+
+                # ── Clause Details Table ─────────────────────────────────
+                risk_badge = render_badge(f"{risk_level.upper()} RISK", RISK_COLORS.get(risk_level, "#888888"))
+                importance_badge = render_badge(importance_category.upper(), IMPORTANCE_COLORS.get(importance_category, "#888888"))
+                compliance_badge = render_badge(compliance_status.upper(), COMPLIANCE_COLORS.get(compliance_status, "#888888"))
+
+                rows = [
+                    ("Clause Classification", _confidence_tier(confidence_score)),
+                    ("Importance Level", importance_badge),
+                    ("Risk Level", risk_badge),
+                    ("Compliance Status", compliance_badge),
+                ]
+                table_rows_html = "".join(
+                    f'<tr><td class="lq-field">{field}</td><td>{value}</td></tr>' for field, value in rows
                 )
+                st.markdown(f'<table class="lq-clause-table">{table_rows_html}</table>', unsafe_allow_html=True)
 
-                st.markdown(
-                    f"""
-                    <div style="
-                        border: 1px solid rgba(128, 128, 128, 0.25);
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-bottom: 15px;
-                        background: var(--secondary-background-color);
-                    ">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4 style="margin: 0; color: var(--text-color);">📌 {c['section_name']}</h4>
-                            <span style="
-                                background-color: {risk_color};
-                                color: #121212;
-                                font-weight: bold;
-                                padding: 3px 10px;
-                                border-radius: 4px;
-                                font-size: 0.8rem;
-                            ">{c['risk_level'].upper()} RISK</span>
-                        </div>
-                        <div style="margin-bottom: 10px;">
-                            <span style="background: rgba(99, 110, 250, 0.2); color: #636EFA; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500;">
-                                🏷️ Type: {c['classification']}
-                            </span>
-                            <span style="background: rgba(128, 128, 128, 0.18); color: var(--text-color); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; margin-left: 10px;">
-                                📁 Risk Cat: {c['risk_category']}
-                            </span>
-                            {f'<span style="background: rgba(128,128,128,0.15); color: var(--text-color); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; margin-left: 10px;">📄 Page {c["page_num"]}</span>' if c['page_num'] else ''}
-                            {length_badge}
-                        </div>
-                        <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color); opacity: 0.85; background: var(--background-color); padding: 12px; border-radius: 6px; border-left: 3px solid #636EFA;">
-                            {preview_text}
-                        </p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                # ── View Original Clause Text (lazy — body never executes
+                # while collapsed, see render_toggle docstring) ──────────
+                if render_toggle(f"clause_{cid}_text_expanded", f"btn_clause_{cid}_text", "View Original Clause Text"):
+                    with st.container(border=True):
+                        st.write(text_content or "No text extracted for this clause.")
 
-                if was_truncated:
-                    with st.expander(f"📄 Show full clause text ({len(clause_text):,} characters)"):
-                        st.write(clause_text)
+                # ── Simplified Version (Agent 7) — runs the moment this
+                # section is opened, no separate "Simplify" button needed.
+                # Cached per clause per session so re-opening/collapsing it
+                # doesn't re-call the LLM. ────────────────────────────────
+                if render_toggle(f"clause_{cid}_simplify_expanded", f"btn_clause_{cid}_simplify", "Simplified Version"):
+                    with st.container(border=True):
+                        result_key = f"simplify_result_{cid}"
+                        error_key = f"simplify_error_{cid}"
 
-                # Show explanations in expansion
-                with st.expander("Show AI Explanation & Risk Analysis"):
-                    st.write(c['explanation'] or "No explanation generated.")
-                    if c['simplification']:
-                        st.markdown("**Plain-English Redraft Suggestion:**")
-                        st.write(c['simplification'])
+                        if result_key not in st.session_state:
+                            with st.spinner("Agent 7 is translating legalese to plain English..."):
+                                try:
+                                    from agents.simplification_agent import simplify_clause
+                                    st.session_state[result_key] = simplify_clause(text_content)
+                                    st.session_state[error_key] = None
+                                except Exception as e:
+                                    st.session_state[result_key] = None
+                                    st.session_state[error_key] = str(e)
 
-                    st.markdown("---")
-                    st.caption(
-                        "The score above is from the fast rule-based scan run at upload time. "
-                        "If it looks wrong for this clause, ask an LLM to re-read it with full "
-                        "legal judgment (this is on-demand only — it never runs automatically)."
-                    )
-                    if st.button("🤖 Re-analyze Risk with AI", key=f"llm_risk_{c['id']}"):
-                        with st.spinner("Requesting an LLM risk re-assessment for this clause..."):
-                            try:
-                                from agents.analyzer_agent import analyze_clause_risk_with_llm
-                                llm_result = analyze_clause_risk_with_llm(c['section_name'], c['text_content'])
-                                crud.update_clause_risk(
-                                    clause_id=c['id'],
-                                    risk_level=llm_result.risk_level,
-                                    risk_category=llm_result.risk_category,
-                                    risk_score=llm_result.risk_score,
-                                    explanation=llm_result.explanation,
-                                )
-                                st.success(
-                                    f"Updated: {llm_result.risk_level} risk ({llm_result.risk_score}/100). Refreshing..."
-                                )
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"LLM risk re-analysis failed: {e}")
-                        
-        with tab2:
-            st.subheader("🤖 Hybrid Clause Identification Agent")
-            st.markdown(
-                """
-                This agent combines:
-                1. **Rule-based regex patterns** (scanning for structures and numbering).
-                2. **Keyword matching** (broad category vocabularies).
-                3. **Deterministic confidence scoring** (regex hit + keyword density + heading match — no LLM call).
-
-                It scans the document for: *Termination, Liability, Confidentiality, Arbitration, Payment, Indemnity, Compliance, Jurisdiction, and Force Majeure*.
-                """
-            )
-            
-            # Retrieve full text of document
-            full_text = "\n\n".join([c['text_content'] for c in clauses])
-            # Build page mapping for page resolution
-            page_mapping = []
-            for c in clauses:
-                page_mapping.append({
-                    "page_number": c["page_num"],
-                    "text_content": c["text_content"]
-                })
-                
-            if st.button("🚀 Trigger Hybrid Identification Agent"):
-                with st.spinner("Analyzing text blocks using regex, keywords, and Groq LLM..."):
-                    try:
-                        detected_clauses = identify_clauses(full_text, page_mapping)
-                        
-                        if not detected_clauses:
-                            st.info("No clauses matching the 9 target types were detected by the agent.")
+                        generated = st.session_state.get(result_key)
+                        if generated:
+                            st.write(generated.simplified_clause)
+                            st.markdown("**💡 Explanation:**")
+                            st.write(generated.explanation)
+                            st.markdown("**🌍 Real-World Example:**")
+                            st.write(generated.real_world_example)
+                        elif c.get("simplification"):
+                            st.caption("AI generation failed — showing the previously saved plain-English redraft instead.")
+                            st.write(c["simplification"])
                         else:
-                            st.success(f"Successfully identified {len(detected_clauses)} contract clauses!")
-                            
-                            # Build pandas DataFrame for table display
-                            table_data = []
-                            for dc in detected_clauses:
-                                table_data.append({
-                                    "Clause Type": dc.clause_type,
-                                    "Confidence Score": f"{dc.confidence_score:.2f}",
-                                    "Page Number": dc.page_number or "N/A",
-                                    "Start Offset": dc.start_position,
-                                    "End Offset": dc.end_position,
-                                    "Clause Text Snippet": dc.clause_text[:120] + "..." if len(dc.clause_text) > 120 else dc.clause_text
-                                })
-                                
-                            df = pd.DataFrame(table_data)
-                            st.dataframe(df, use_container_width=True)
-                            
-                            # Expanders for full text review
-                            st.subheader("📖 Full Text of Identified Clauses")
-                            for idx, dc in enumerate(detected_clauses):
-                                with st.expander(f"Item {idx+1}: {dc.clause_type} (Confidence: {dc.confidence_score:.2f}, Page: {dc.page_number or 'N/A'})"):
-                                    st.markdown(f"**Offsets**: `{dc.start_position}` to `{dc.end_position}`")
-                                    st.write(dc.clause_text)
-                                    
-                            # Log audit action
-                            crud.add_audit_log("hybrid_clause_identification", f"Executed Hybrid Clause Identification Agent on document '{doc_name}'")
-                    except Exception as e:
-                        st.error(f"Agent execution error: {e}")
-                        
-        with tab3:
-            st.subheader("🛑 Important Clause Detection Agent")
-            st.markdown(
-                """
-                This agent analyzes all contract sections and flags their **legal significance**, **semantic importance**, 
-                and **financial impact**. It scores clauses (0-100) and classifies them into a color-coded schema:
-                
-                - 🔴 **Critical** (Score 75-100): Direct liabilities, indemnification terms, jurisdiction, or crucial termination clauses.
-                - 🟠 **Important** (Score 40-74): Payment instructions, nda limitations, audit scopes, standard warranties.
-                - 🟢 **Informational** (Score 0-39): Boilerplate details, addresses, notice instructions, contact lines, preambles.
-                """
-            )
-            
-            if st.button("🚀 Audit Clause Importance"):
-                # Convert SQLite row list to JSON serializable list for caching purposes
-                serializable_clauses = []
-                for c in clauses:
-                    serializable_clauses.append({
-                        "id": c["id"],
-                        "section_name": c["section_name"],
-                        "text_content": c["text_content"]
-                    })
-                
-                clauses_json = json.dumps(serializable_clauses)
-                
-                with st.spinner("Executing Significance Audit Agent (scoring legal, semantic, & financial impact)..."):
-                    try:
-                        audited_results = run_importance_audit(clauses_json)
-                        
-                        st.success(f"Audit complete! Classified significance for {len(audited_results)} clauses.")
-                        
-                        # Display summary
-                        crit_count = sum(1 for a in audited_results if a["category"] == "Critical")
-                        imp_count = sum(1 for a in audited_results if a["category"] == "Important")
-                        info_count = sum(1 for a in audited_results if a["category"] == "Informational")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("🔴 Critical Significance", crit_count)
-                        col2.metric("🟠 Important Significance", imp_count)
-                        col3.metric("🟢 Informational Details", info_count)
-                        
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        
-                        # Render each card styled appropriately
-                        for idx, item in enumerate(audited_results):
-                            border_color = "#00CC96" # Green
-                            badge_color = "rgba(0, 204, 150, 0.15)"
-                            text_color = "#00cc96"
-                            
-                            if item["category"] == "Critical":
-                                border_color = "#EF553B" # Red
-                                badge_color = "rgba(239, 85, 59, 0.15)"
-                                text_color = "#EF553B"
-                            elif item["category"] == "Important":
-                                border_color = "#FECB52" # Orange
-                                badge_color = "rgba(254, 203, 82, 0.15)"
-                                text_color = "#FECB52"
+                            st.error(f"Simplification failed: {st.session_state.get(error_key, 'unknown error')}")
 
-                            item_text = item['text_content'] or ""
-                            preview_text, was_truncated = truncate_preview(item_text)
-                            length_badge = (
-                                f'<span style="background: rgba(128,128,128,0.15); color: var(--text-color); '
-                                f'padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-left: 8px;">'
-                                f'📏 {len(item_text):,} chars</span>'
-                                if was_truncated else ""
+                        if st.button("🔄 Regenerate with AI (Agent 7)", key=f"simplify_regen_{cid}"):
+                            with st.spinner("Agent 7 is translating legalese to plain English..."):
+                                try:
+                                    from agents.simplification_agent import simplify_clause
+                                    st.session_state[result_key] = simplify_clause(text_content)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Simplification failed: {e}")
+
+                # ── Impact Analysis (radar chart + side details) ────────
+                with st.expander("📊 Impact Analysis", expanded=False):
+                    impact_score = _impact_level_score(
+                        intel.get("legal_impact"), intel.get("financial_impact"),
+                        intel.get("business_impact"), intel.get("compliance_impact"),
+                    )
+                    if impact_score is None or intel.get("legal_impact") is None:
+                        st.caption("Impact scoring unavailable for this clause.")
+                    else:
+                        impact_label = _impact_level_label(impact_score)
+                        chart_col, detail_col = st.columns([1.1, 1])
+                        with chart_col:
+                            radar_fig = generate_clause_impact_radar_chart(
+                                impact_score, intel["business_impact"], intel["legal_impact"],
                             )
-
+                            st.plotly_chart(radar_fig, width="stretch", key=f"radar_{cid}")
+                        with detail_col:
                             st.markdown(
-                                f"""
-                                <div style="
-                                    border: 1px solid {border_color};
-                                    border-radius: 8px;
-                                    padding: 18px;
-                                    margin-bottom: 20px;
-                                    background: var(--secondary-background-color);
-                                ">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                        <h4 style="margin: 0; color: var(--text-color);">📌 {item['section_name']}{length_badge}</h4>
-                                        <span style="
-                                            background-color: {badge_color};
-                                            color: {text_color};
-                                            font-weight: bold;
-                                            padding: 4px 12px;
-                                            border-radius: 6px;
-                                            font-size: 0.85rem;
-                                            border: 1px solid {border_color};
-                                        ">{item['category'].upper()} (Score: {item['score']})</span>
-                                    </div>
-                                    <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color); opacity: 0.85; background: var(--background-color); padding: 12px; border-radius: 6px;">
-                                        {preview_text}
-                                    </p>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
+                                f"**Impact Level:** {render_badge(impact_label.upper(), IMPACT_LEVEL_COLORS.get(impact_label, '#888888'))}",
+                                unsafe_allow_html=True,
                             )
+                            st.caption("Overall severity of this clause's impact across legal, financial, business, and compliance dimensions.")
+                            st.markdown(f"**Business Impact:** {intel['business_impact']}/100")
+                            st.caption("How significantly this clause could affect business operations, SLAs, or deliverables.")
+                            st.markdown(f"**Legal Impact:** {intel['legal_impact']}/100")
+                            st.caption("How significantly this clause could affect legal exposure or enforceability.")
 
-                            if was_truncated:
-                                with st.expander(f"📄 Show full clause text ({len(item_text):,} characters)"):
-                                    st.write(item_text)
-
-                            # Expanders showing details
-                            with st.expander(f"Inspect Significance Details for {item['section_name']}"):
-                                st.markdown(f"**⚖️ Legal Significance Analysis:**")
-                                st.write(item["legal_analysis"])
-                                st.markdown(f"**💰 Financial Impact Analysis:**")
-                                st.write(item["financial_analysis"])
-                                st.markdown(f"**🔍 Significance Summary Reasoning:**")
-                                st.write(item["reasoning"])
-                                
-                        crud.add_audit_log("clause_importance_audit", f"Audited clause importance categories for document '{doc_name}'")
-                    except Exception as e:
-                        st.error(f"Audit failure: {e}")
-
-        with tab4:
-            st.subheader("🎯 Clause Impact Analysis Agent")
-            st.markdown(
-                """
-                This agent analyzes specific clauses across 4 key dimensions: **Legal**, **Financial**, **Business**, and **Compliance**.
-                It generates a comprehensive impact matrix visualized via a radar chart.
-                """
-            )
-            
-            clause_options = {c['id']: c['section_name'] for c in clauses}
-            selected_clause_id = st.selectbox(
-                "Select a clause for Impact Analysis:",
-                options=list(clause_options.keys()),
-                format_func=lambda x: clause_options[x],
-                key="impact_clause_select"
-            )
-            
-            clause_to_analyze = next((c for c in clauses if c['id'] == selected_clause_id), None)
-            
-            if clause_to_analyze:
-                st.info(clause_to_analyze['text_content'])
-                
-                if st.button("Generate Impact Matrix"):
-                    with st.spinner("Agent 6 is assessing multi-dimensional impact..."):
-                        try:
-                            from agents.impact_agent import analyze_clause_impact
-                            from utils.visualizer import generate_impact_radar_chart
-                            
-                            impact_result = analyze_clause_impact(clause_to_analyze['section_name'], clause_to_analyze['text_content'])
-                            
-                            col1, col2 = st.columns([1, 1])
-                            with col1:
-                                st.markdown("### 📊 Impact Radar Chart")
-                                radar_fig = generate_impact_radar_chart(
-                                    impact_result.legal_impact,
-                                    impact_result.financial_impact,
-                                    impact_result.business_impact,
-                                    impact_result.compliance_impact
-                                )
-                                st.plotly_chart(radar_fig, use_container_width=True)
-                                
-                            with col2:
-                                st.markdown("### 📋 Impact Scores")
-                                st.metric("⚖️ Legal Impact", f"{impact_result.legal_impact}/100")
-                                st.metric("💰 Financial Impact", f"{impact_result.financial_impact}/100")
-                                st.metric("💼 Business Impact", f"{impact_result.business_impact}/100")
-                                st.metric("📜 Compliance Impact", f"{impact_result.compliance_impact}/100")
-                                
-                        except Exception as e:
-                            st.error(f"Impact Analysis failed: {e}")
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
