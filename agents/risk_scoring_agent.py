@@ -2,6 +2,9 @@ import logging
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 
+from services.prompt_builder import build_clause_prompt
+from utils.llm_client import invoke_llm_text
+
 logger = logging.getLogger(__name__)
 
 RISK_POINTS = {"High": 90, "Medium": 55, "Low": 25, "None": 5}
@@ -154,3 +157,41 @@ def assess_document_risk_with_llm(document_name: str, clauses_data: List[Dict[st
         scored.append((section, classification, level, points))
 
     return _aggregate(document_name, scored, "Groq LLM re-assessment of every clause")
+
+
+def generate_risk_mitigation(section_name: str, clause_text: str, risk_level: str,
+                              risk_category: str, explanation: str) -> str:
+    """On-demand plain-English risk breakdown for a single clause — triggered
+    by the "Simplify Risk" button (views/risk_analysis.py). Single-clause
+    prompt built via services/prompt_builder, never the full document."""
+    system_prompt = "You are an expert contract lawyer providing risk mitigation advice."
+    instructions = (
+        f"The following clause was flagged as having a {risk_level} risk "
+        f"in the category '{risk_category}'.\n\n"
+        f"Risk Explanation:\n{explanation}\n\n"
+        "Write a plain-English risk breakdown using this exact Markdown structure:\n"
+        "### Why It Is Risky\n<one short paragraph on the specific threat/exposure>\n\n"
+        "### Legal Impact\n<1-2 sentences on legal exposure or enforceability risk>\n\n"
+        "### Business Impact\n<1-2 sentences on operational/commercial impact>\n\n"
+        "### Possible Consequences\n<3-5 bullet points, each starting with '✔ ', "
+        "covering concrete downside scenarios>\n\n"
+        "### Suggested Mitigation\n<a revised, markup-ready version of the clause text "
+        "or concrete steps to reduce the risk>\n\n"
+        "### AI Recommendation\n<1-2 short paragraphs recommending what to do next>"
+    )
+    user_prompt = build_clause_prompt(section_name, clause_text, instructions)
+    return invoke_llm_text(system_prompt, user_prompt, temperature=0.2)
+
+
+def generate_improved_clause(original_clause_text: str, mitigation_breakdown: str) -> str:
+    """On-demand redraft of a single clause based on a prior risk-mitigation
+    breakdown — triggered by "Generate Improved Clause" (views/risk_analysis.py).
+    Single-clause prompt, never the full document."""
+    system_prompt = "You are an expert contract lawyer redrafting a legal clause."
+    user_prompt = (
+        f"Based on this risk breakdown:\n\n{mitigation_breakdown}\n\n"
+        "Rewrite the following clause so it fully addresses the risks and "
+        "recommendations above. Return ONLY the revised clause text, no commentary.\n\n"
+        f"Original Clause:\n{original_clause_text}"
+    )
+    return invoke_llm_text(system_prompt, user_prompt, temperature=0.2)
