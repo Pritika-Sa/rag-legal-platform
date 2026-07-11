@@ -5,10 +5,31 @@ import hashlib
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import pdfplumber
+import pytesseract
+from PIL import Image
 from docx import Document
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
+if os.getenv("TESSERACT_CMD"):
+    pytesseract.pytesseract.tesseract_cmd = os.getenv("TESSERACT_CMD")
+
+
+def extract_text_from_image(file_path: str) -> str:
+    """OCRs an image (PNG/JPG/JPEG) into raw text via Tesseract. Raises a
+    plain RuntimeError with a user-facing message if the Tesseract binary
+    itself isn't installed/on PATH, so callers can show a clean warning
+    instead of a raw pytesseract traceback."""
+    try:
+        return pytesseract.image_to_string(Image.open(file_path))
+    except pytesseract.TesseractNotFoundError:
+        raise RuntimeError(
+            "OCR engine not found. Install Tesseract-OCR and, if it isn't on your system PATH, "
+            "set the TESSERACT_CMD environment variable to its executable path."
+        )
 
 # Input Schema for LangChain Component
 class DocumentParserInput(BaseModel):
@@ -103,6 +124,8 @@ def parse_document_to_json(file_path: str, document_id: Optional[str] = None, ve
     elif ext == ".txt":
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             raw_text = f.read()
+    elif ext in IMAGE_EXTENSIONS:
+        raw_text = extract_text_from_image(file_path)
     else:
         raise ValueError(f"Unsupported file format: {ext}")
         
@@ -232,11 +255,14 @@ def parse_document(file_path: str) -> List[Dict[str, Any]]:
                     "text_content": "\n".join(current_content).strip(),
                     "page_num": current_page
                 })
+        elif ext in IMAGE_EXTENSIONS:
+            content = extract_text_from_image(file_path)
+            sections = [{"section_name": "Full Document", "text_content": content, "page_num": 1}]
         else:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             sections = [{"section_name": "Full Document", "text_content": content, "page_num": 1}]
-            
+
         # If regex didn't find clear sections (e.g. less than 2 sections parsed)
         # fallback to using RecursiveCharacterTextSplitter chunks as sections
         if len(sections) <= 2:

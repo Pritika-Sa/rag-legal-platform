@@ -1,22 +1,17 @@
-import os
-import tempfile
 import plotly.express as px
 import plotly.graph_objects as go
-import networkx as nx
-from pyvis.network import Network
-import streamlit as st
 from utils.theme import is_light_theme
 
-# Plotly/PyVis render literal color values rather than reading the page's
-# CSS, so chart chrome (axis text, gridlines, chart background) needs to be
-# picked explicitly per theme instead of inheriting from app.py's CSS vars.
+# Plotly renders literal color values rather than reading the page's CSS, so
+# chart chrome (axis text, gridlines, chart background) needs to be picked
+# explicitly per theme instead of inheriting from app.py's CSS vars.
 _CHART_COLORS = {
     "dark": {
-        "text": "#E0E0E0", "grid": "#333333", "pyvis_bg": "#1E1E1E",
+        "text": "#E0E0E0", "grid": "#333333",
         "legend_bg": "rgba(0,0,0,0.5)", "threshold": "white", "muted": "#888888",
     },
     "light": {
-        "text": "#31333F", "grid": "#D5D5D5", "pyvis_bg": "#FFFFFF",
+        "text": "#31333F", "grid": "#D5D5D5",
         "legend_bg": "rgba(255,255,255,0.7)", "threshold": "#31333F", "muted": "#6b6b6b",
     },
 }
@@ -109,120 +104,6 @@ def generate_category_bar_chart(clauses):
         margin=dict(t=40, b=20, l=10, r=10)
     )
     return fig
-
-def generate_risk_evolution_chart(versions_data):
-    """Generates a trend chart of risk scores over different contract versions.
-    
-    versions_data: list of dicts/tuples with (version, average_risk_score, high_risk_count)
-    """
-    fig = go.Figure()
-    
-    versions = [v['version'] for v in versions_data]
-    avg_scores = [v['avg_risk'] for v in versions_data]
-    high_counts = [v['high_count'] for v in versions_data]
-    
-    fig.add_trace(go.Scatter(
-        x=versions, y=avg_scores,
-        mode='lines+markers',
-        name='Avg Risk Score (0-10)',
-        line=dict(color='#636EFA', width=3),
-        marker=dict(size=8)
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=versions, y=high_counts,
-        mode='lines+markers',
-        name='High Risk Clauses Count',
-        line=dict(color='#EF553B', width=3, dash='dash'),
-        marker=dict(size=8)
-    ))
-    
-    chart_colors = _chart_colors()
-    fig.update_layout(
-        title="Contract Risk Profile Evolution",
-        xaxis_title="Contract Version",
-        yaxis_title="Metric Value",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font_color=chart_colors["text"],
-        title_font_size=18,
-        xaxis=dict(gridcolor=chart_colors["grid"], tickmode='linear', tick0=1, dtick=1),
-        yaxis=dict(gridcolor=chart_colors["grid"]),
-        legend=dict(x=0.01, y=0.99, bgcolor=chart_colors["legend_bg"]),
-        margin=dict(t=50, b=30, l=10, r=10)
-    )
-    return fig
-
-def render_pyvis_graph(nodes, edges, directed=False):
-    """Generates an HTML representation of a network using PyVis and renders it in Streamlit."""
-    chart_colors = _chart_colors()
-    net = Network(
-        height="500px",
-        width="100%",
-        bgcolor=chart_colors["pyvis_bg"],
-        font_color=chart_colors["text"],
-        directed=directed,
-        notebook=False
-    )
-    
-    # Configure options for sleek physics and styling
-    net.set_options("""
-    var options = {
-      "nodes": {
-        "borderWidth": 2,
-        "borderWidthSelected": 4,
-        "shadow": true
-      },
-      "edges": {
-        "color": {
-          "inherit": true
-        },
-        "smooth": {
-          "enabled": true,
-          "type": "dynamic"
-        }
-      },
-      "physics": {
-        "barnesHut": {
-          "gravitationalConstant": -12000,
-          "centralGravity": 0.3,
-          "springLength": 95,
-          "springConstant": 0.04,
-          "damping": 0.09,
-          "avoidOverlap": 0.5
-        },
-        "minVelocity": 0.75
-      }
-    }
-    """)
-    
-    for n in nodes:
-        net.add_node(
-            n['id'], 
-            label=n.get('label', str(n['id'])), 
-            color=n.get('color', '#636EFA'), 
-            title=n.get('title', ''), 
-            size=n.get('size', 15)
-        )
-        
-    for e in edges:
-        net.add_edge(
-            e['source'], 
-            e['target'], 
-            label=e.get('label', ''), 
-            color=e.get('color', '#888888'), 
-            width=e.get('width', 1)
-        )
-        
-    # Write to a temporary file
-    with tempfile.TemporaryDirectory() as tmpdir:
-        path = os.path.join(tmpdir, "graph.html")
-        net.save_graph(path)
-        with open(path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-            
-    # Clean the HTML to avoid Streamlit iframe display issues
-    st.components.v1.html(html_content, height=520, scrolling=True)
 
 def generate_risk_gauge_chart(risk_score):
     """Generates a Plotly Gauge Chart for the overall Document Risk Score."""

@@ -25,6 +25,7 @@ def add_document(name, path, file_hash, user_id=None):
         "hash": file_hash,
         "user_id": user_id,
         "upload_date": _now(),
+        "status": "processing",
     })
     add_audit_log("document_upload", f"Uploaded document '{name}' (ID: {doc_id})")
     return doc_id
@@ -160,50 +161,10 @@ def get_clauses_for_document(doc_id):
     return list(db.clauses.find({"doc_id": doc_id}).sort("id", 1))
 
 
-def update_clause_text(clause_id, new_text, change_description="User manual update"):
-    """Updates clause text, creates a version record, increments the version."""
-    db = get_db()
-    clause = db.clauses.find_one({"id": clause_id})
-    if not clause:
-        raise ValueError(f"Clause with ID {clause_id} not found.")
-
-    old_text = clause["text_content"]
-    old_version = clause["version"]
-    new_version = old_version + 1
-
-    version_id = _get_next_id("clause_versions")
-    db.clause_versions.insert_one({
-        "id": version_id,
-        "clause_id": clause_id,
-        "previous_text": old_text,
-        "new_text": new_text,
-        "change_description": change_description,
-        "timestamp": _now(),
-    })
-
-    db.clauses.update_one(
-        {"id": clause_id},
-        {"$set": {"text_content": new_text, "version": new_version}},
-    )
-
-    add_audit_log(
-        "clause_update",
-        f"Updated clause ID {clause_id} ('{clause['section_name']}') in doc {clause['doc_id']} to V{new_version}",
-    )
-    return new_version
-
-
-def get_clause_versions(clause_id):
-    """Retrieves the complete modification history for a clause."""
-    db = get_db()
-    return list(db.clause_versions.find({"clause_id": clause_id}).sort("timestamp", -1))
-
-
 def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explanation, source="LLM"):
     """Overwrites a clause's risk fields (e.g. after an on-demand LLM
     re-analysis) without touching text_content/version — this isn't an edit
-    to the clause itself, just a re-scoring, so it doesn't create a
-    clause_versions record the way update_clause_text does."""
+    to the clause itself, just a re-scoring."""
     db = get_db()
     clause = db.clauses.find_one({"id": clause_id})
     if not clause:
@@ -327,12 +288,6 @@ def add_entities_bulk(doc_id, entities):
     return ids
 
 
-def get_entities_for_document(doc_id):
-    """Retrieves all entity records for a document."""
-    db = get_db()
-    return list(db.entities.find({"doc_id": doc_id}))
-
-
 # ── Relationships (persisted knowledge-graph + dependency-graph edges) ──────
 
 def add_relationships_bulk(doc_id, relationships):
@@ -367,12 +322,6 @@ def add_relationships_bulk(doc_id, relationships):
     ]
     db.relationships.insert_many(docs)
     return ids
-
-
-def get_relationships_for_document(doc_id):
-    """Retrieves all relationship records for a document."""
-    db = get_db()
-    return list(db.relationships.find({"doc_id": doc_id}))
 
 
 # ── Retrieval History (one row per QA query) ────────────────────────────────

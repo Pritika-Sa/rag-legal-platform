@@ -5,17 +5,10 @@ import re
 import streamlit as st
 
 from database import crud
-from utils.llm_client import invoke_llm_text
 from utils.theme import render_header, render_metric_card, render_mini_card, render_badge
 from agents.importance_agent import assess_clause_importance
+from agents.risk_scoring_agent import generate_risk_mitigation, generate_improved_clause
 from agents.rule_engine import detect_clause_type
-
-render_header(
-    "⚠️",
-    "Risk Analysis & Mitigation Advisor",
-    "Score document-wide risk and generate AI-backed mitigation strategies for flagged clauses.",
-    badge="Agent 4"
-)
 
 RISK_COLORS = {"High": "#EF553B", "Medium": "#FECB52", "Low": "#636EFA", "None": "#00CC96", "Critical": "#EF553B"}
 
@@ -126,12 +119,22 @@ def _compute_display_intel(clauses_json: str) -> dict:
     return intel
 
 
-doc_id = st.session_state.active_doc_id
-doc_name = st.session_state.active_doc_name
+def render():
+    render_header(
+        "⚠️",
+        "Risk Analysis & Mitigation Advisor",
+        "Score document-wide risk; Explain Risk and Simplify Risk turn every flagged clause into a "
+        "plain-English breakdown with an AI-backed mitigation strategy.",
+        badge="Agent 4"
+    )
 
-if not doc_id:
-    st.warning("⚠️ Please select an active document in the sidebar to review risks.")
-else:
+    doc_id = st.session_state.active_doc_id
+    doc_name = st.session_state.active_doc_name
+
+    if not doc_id:
+        st.warning("⚠️ Please select an active document in the sidebar to review risks.")
+        return
+
     st.info(f"Auditing Risks for: **{doc_name}**")
 
     clauses = crud.get_clauses_for_document(doc_id)
@@ -255,226 +258,209 @@ else:
 
     if not risky_clauses:
         st.success("✅ Excellent! No High or Medium risk clauses were detected in this agreement.")
-    else:
-        high_count = sum(1 for c in risky_clauses if c["risk_level"] == "High")
-        med_count = sum(1 for c in risky_clauses if c["risk_level"] == "Medium")
+        return
 
-        kpi_cols = st.columns(3)
-        with kpi_cols[0]:
-            st.markdown(render_metric_card("Flagged Clauses", len(risky_clauses), "🚩", accent="var(--lq-danger)"), unsafe_allow_html=True)
-        with kpi_cols[1]:
-            st.markdown(render_metric_card("High Risk", high_count, "🔴", accent="var(--lq-danger)"), unsafe_allow_html=True)
-        with kpi_cols[2]:
-            st.markdown(render_metric_card("Medium Risk", med_count, "🟡", accent="var(--lq-warning)"), unsafe_allow_html=True)
+    high_count = sum(1 for c in risky_clauses if c["risk_level"] == "High")
+    med_count = sum(1 for c in risky_clauses if c["risk_level"] == "Medium")
 
-        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+    kpi_cols = st.columns(3)
+    with kpi_cols[0]:
+        st.markdown(render_metric_card("Flagged Clauses", len(risky_clauses), "🚩", accent="var(--lq-danger)"), unsafe_allow_html=True)
+    with kpi_cols[1]:
+        st.markdown(render_metric_card("High Risk", high_count, "🔴", accent="var(--lq-danger)"), unsafe_allow_html=True)
+    with kpi_cols[2]:
+        st.markdown(render_metric_card("Medium Risk", med_count, "🟡", accent="var(--lq-warning)"), unsafe_allow_html=True)
 
-        serializable = [
-            {"id": c["id"], "section_name": c["section_name"], "text_content": c["text_content"]}
-            for c in risky_clauses
-        ]
-        intel_by_clause = _compute_display_intel(json.dumps(serializable))
+    st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
-        PREVIEW_CHARS = 320
-        for c in risky_clauses:
-            cid = c["id"]
-            risk_level = c["risk_level"]
-            border_color = RISK_COLORS.get(risk_level, "#888888")
-            full_text = c["text_content"] or ""
-            is_long = len(full_text) > PREVIEW_CHARS
+    serializable = [
+        {"id": c["id"], "section_name": c["section_name"], "text_content": c["text_content"]}
+        for c in risky_clauses
+    ]
+    intel_by_clause = _compute_display_intel(json.dumps(serializable))
 
-            intel = intel_by_clause.get(cid, {})
-            importance_category = intel.get("importance_category") or "—"
-            confidence = intel.get("confidence")
-            confidence_display = f"{confidence:.2f} Confidence" if confidence is not None else "—"
+    PREVIEW_CHARS = 320
+    for c in risky_clauses:
+        cid = c["id"]
+        risk_level = c["risk_level"]
+        border_color = RISK_COLORS.get(risk_level, "#888888")
+        full_text = c["text_content"] or ""
+        is_long = len(full_text) > PREVIEW_CHARS
 
-            with st.container(border=True, key=f"riskcard_{cid}"):
-                # Risk-colored accent strip along the top of the card.
-                st.markdown(
-                    f"<div style='height:4px; background:{border_color}; border-radius:6px; margin-bottom:12px;'></div>",
-                    unsafe_allow_html=True,
+        intel = intel_by_clause.get(cid, {})
+        importance_category = intel.get("importance_category") or "—"
+        confidence = intel.get("confidence")
+        confidence_display = f"{confidence:.2f} Confidence" if confidence is not None else "—"
+
+        with st.container(border=True, key=f"riskcard_{cid}"):
+            # Risk-colored accent strip along the top of the card.
+            st.markdown(
+                f"<div style='height:4px; background:{border_color}; border-radius:6px; margin-bottom:12px;'></div>",
+                unsafe_allow_html=True,
+            )
+
+            header_col, badge_col = st.columns([5, 1.6])
+            with header_col:
+                st.markdown(f"#### ⚠️ {c['section_name']}")
+            with badge_col:
+                badge_html = render_badge(f"{risk_level.upper()} RISK", border_color)
+                st.markdown(f"<div style='text-align:right; padding-top:14px;'>{badge_html}</div>", unsafe_allow_html=True)
+
+            mini_cols = st.columns(5)
+            page_val = c.get("page_num")
+            with mini_cols[0]:
+                st.markdown(render_mini_card("Category", _fmt(c.get("risk_category")), "🏷"), unsafe_allow_html=True)
+            with mini_cols[1]:
+                st.markdown(render_mini_card("Page", f"Page {page_val}" if page_val else "N/A", "📄"), unsafe_allow_html=True)
+            with mini_cols[2]:
+                st.markdown(render_mini_card("Importance", importance_category, "📈"), unsafe_allow_html=True)
+            with mini_cols[3]:
+                st.markdown(render_mini_card("Confidence", confidence_display, "🎯"), unsafe_allow_html=True)
+            with mini_cols[4]:
+                st.markdown(render_mini_card("Characters", f"{len(full_text):,}", "🔤"), unsafe_allow_html=True)
+
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+            # ── Clause preview (fade-truncated ~5 lines) ────────────
+            with st.container(key=f"clausepreview_{cid}"):
+                st.write(full_text or "No text extracted for this clause.")
+
+            if is_long:
+                if render_toggle(f"clause_{cid}_full_expanded", f"btn_riskfull_{cid}", "View Full Clause"):
+                    with st.container(border=True):
+                        st.write(full_text)
+
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+            # ── Explain Risk ─────────────────────────────────────────
+            st.markdown("##### 🧠 Explain Risk — why was this clause flagged?")
+            bullets = _bulletize(c.get("explanation"))
+            if bullets:
+                bullets_html = "".join(f"<li>{_highlight(b)}</li>" for b in bullets)
+                st.markdown(f'<ul class="lq-explanation-list">{bullets_html}</ul>', unsafe_allow_html=True)
+            else:
+                st.caption("No explanation recorded for this clause yet.")
+
+            factors = _clause_risk_factors(c.get("risk_category"), c.get("explanation"), full_text)
+            if factors:
+                st.markdown("**Risk Factors**")
+                chips_html = "".join(
+                    f'<span class="lq-risk-chip" style="background:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}22; '
+                    f'color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}; border-color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}55;">'
+                    f'{html.escape(str(f))}</span>'
+                    for i, f in enumerate(factors)
                 )
+                st.markdown(chips_html, unsafe_allow_html=True)
 
-                header_col, badge_col = st.columns([5, 1.6])
-                with header_col:
-                    st.markdown(f"#### ⚠️ {c['section_name']}")
-                with badge_col:
-                    badge_html = render_badge(f"{risk_level.upper()} RISK", border_color)
-                    st.markdown(f"<div style='text-align:right; padding-top:14px;'>{badge_html}</div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
-                mini_cols = st.columns(5)
-                page_val = c.get("page_num")
-                with mini_cols[0]:
-                    st.markdown(render_mini_card("Category", _fmt(c.get("risk_category")), "🏷"), unsafe_allow_html=True)
-                with mini_cols[1]:
-                    st.markdown(render_mini_card("Page", f"Page {page_val}" if page_val else "N/A", "📄"), unsafe_allow_html=True)
-                with mini_cols[2]:
-                    st.markdown(render_mini_card("Importance", importance_category, "📈"), unsafe_allow_html=True)
-                with mini_cols[3]:
-                    st.markdown(render_mini_card("Confidence", confidence_display, "🎯"), unsafe_allow_html=True)
-                with mini_cols[4]:
-                    st.markdown(render_mini_card("Characters", f"{len(full_text):,}", "🔤"), unsafe_allow_html=True)
-
-                st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-
-                # ── Clause preview (fade-truncated ~5 lines) ────────────
-                with st.container(key=f"clausepreview_{cid}"):
-                    st.write(full_text or "No text extracted for this clause.")
-
-                if is_long:
-                    if render_toggle(f"clause_{cid}_full_expanded", f"btn_riskfull_{cid}", "View Full Clause"):
-                        with st.container(border=True):
-                            st.write(full_text)
-
-                st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-
-                # ── Why was this clause flagged? ─────────────────────────
-                st.markdown("##### 🧠 Why was this clause flagged?")
-                bullets = _bulletize(c.get("explanation"))
-                if bullets:
-                    bullets_html = "".join(f"<li>{_highlight(b)}</li>" for b in bullets)
-                    st.markdown(f'<ul class="lq-explanation-list">{bullets_html}</ul>', unsafe_allow_html=True)
-                else:
-                    st.caption("No explanation recorded for this clause yet.")
-
-                factors = _clause_risk_factors(c.get("risk_category"), c.get("explanation"), full_text)
-                if factors:
-                    st.markdown("**Risk Factors**")
-                    chips_html = "".join(
-                        f'<span class="lq-risk-chip" style="background:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}22; '
-                        f'color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}; border-color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}55;">'
-                        f'{html.escape(str(f))}</span>'
-                        for i, f in enumerate(factors)
-                    )
-                    st.markdown(chips_html, unsafe_allow_html=True)
-
-                st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-
-                # ── AI Mitigation Advisor ────────────────────────────────
-                mitigation_key = f"mitigation_result_{cid}"
-                improved_key = f"improved_clause_{cid}"
-                if render_toggle(f"clause_{cid}_mitigation_expanded", f"btn_mitigate_toggle_{cid}", "AI Mitigation Strategy"):
-                    with st.container(border=True):
-                        if mitigation_key not in st.session_state:
-                            st.caption(
-                                "Generate a professional mitigation report: threat exposure, a revised clause "
-                                "redraft, and negotiation strategy."
-                            )
-                            if st.button("💡 Generate Mitigation", key=f"mitigate_{cid}", type="primary"):
-                                with st.spinner("💡 Generating AI Mitigation Strategy..."):
-                                    try:
-                                        system_prompt = "You are an expert contract lawyer providing risk mitigation advice."
-                                        user_prompt = (
-                                            f"The following clause was flagged as having a {risk_level} risk "
-                                            f"in the category '{c['risk_category']}'.\n\n"
-                                            f"Clause Text:\n{full_text}\n\n"
-                                            f"Risk Explanation:\n{c.get('explanation')}\n\n"
-                                            "Write a professional mitigation report using this exact Markdown structure:\n"
-                                            "### Reason\n<one short paragraph on the specific threat/exposure to our organization>\n\n"
-                                            "### Recommended Improvements\n<3-5 bullet points, each starting with '✔ ', "
-                                            "covering the concrete revisions needed>\n\n"
-                                            "### Improved Clause Wording\n<a revised, markup-ready version of the clause text>\n\n"
-                                            "### Negotiation Strategy\n<1-2 short paragraphs of negotiation tactics for the opposing party>"
-                                        )
-                                        response = invoke_llm_text(system_prompt, user_prompt, temperature=0.2)
-                                        st.session_state[mitigation_key] = response
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Failed to generate mitigation: {e}")
-                        else:
-                            st.markdown("###### ✅ Recommended Mitigation Strategy")
-                            st.markdown(st.session_state[mitigation_key])
-
-                            action_cols = st.columns(2)
-                            if action_cols[0].button("🔄 Regenerate", key=f"mitigate_regen_{cid}", width="stretch"):
-                                del st.session_state[mitigation_key]
-                                st.session_state.pop(improved_key, None)
-                                st.rerun()
-                            if action_cols[1].button("📝 Generate Improved Clause", key=f"improve_{cid}", width="stretch"):
-                                with st.spinner("Drafting improved clause wording..."):
-                                    try:
-                                        improve_prompt = (
-                                            f"Based on this mitigation report:\n\n{st.session_state[mitigation_key]}\n\n"
-                                            "Rewrite the following clause so it fully addresses the risks and "
-                                            "recommendations above. Return ONLY the revised clause text, no commentary.\n\n"
-                                            f"Original Clause:\n{full_text}"
-                                        )
-                                        improved = invoke_llm_text(
-                                            "You are an expert contract lawyer redrafting a legal clause.",
-                                            improve_prompt, temperature=0.2,
-                                        )
-                                        st.session_state[improved_key] = improved
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Failed to generate improved clause: {e}")
-
-                            if st.session_state.get(improved_key):
-                                st.markdown("###### 📝 Improved Clause")
-                                st.info(st.session_state[improved_key])
-
-                st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-
-                # ── Re-analyze Risk with AI ──────────────────────────────
-                reanalysis_key = f"reanalysis_{cid}"
-                if render_toggle(f"clause_{cid}_reanalyze_expanded", f"btn_reanalyze_toggle_{cid}", "Re-analyze Risk"):
-                    with st.container(border=True):
-                        st.markdown("###### 🔄 Re-analyze Risk")
-                        st.caption("Validate the clause after applying AI recommendations — re-scores it with a fresh LLM legal assessment.")
-
-                        if st.button("Re-analyze with AI", key=f"llm_risk_{cid}", type="primary"):
-                            with st.spinner("🔄 Requesting an LLM risk re-assessment for this clause..."):
+            # ── Simplify Risk (why risky / legal impact / business
+            # impact / consequences / mitigation / AI recommendation) ──
+            mitigation_key = f"mitigation_result_{cid}"
+            improved_key = f"improved_clause_{cid}"
+            if render_toggle(f"clause_{cid}_mitigation_expanded", f"btn_mitigate_toggle_{cid}", "Simplify Risk"):
+                with st.container(border=True):
+                    if mitigation_key not in st.session_state:
+                        st.caption(
+                            "Generate a plain-English risk breakdown: why it's risky, legal and business "
+                            "impact, likely consequences, suggested mitigation, and an AI recommendation."
+                        )
+                        if st.button("💡 Simplify Risk", key=f"mitigate_{cid}", type="primary"):
+                            with st.spinner("💡 Generating AI risk breakdown..."):
                                 try:
-                                    from agents.analyzer_agent import analyze_clause_risk_with_llm
-                                    before_level = risk_level
-                                    before_score = c.get("risk_score") if c.get("risk_score") is not None else 0
-                                    llm_result = analyze_clause_risk_with_llm(c["section_name"], full_text)
-                                    crud.update_clause_risk(
-                                        clause_id=cid,
-                                        risk_level=llm_result.risk_level,
-                                        risk_category=llm_result.risk_category,
-                                        risk_score=llm_result.risk_score,
-                                        explanation=llm_result.explanation,
+                                    response = generate_risk_mitigation(
+                                        c["section_name"], full_text, risk_level,
+                                        c["risk_category"], c.get("explanation"),
                                     )
-                                    st.session_state[reanalysis_key] = {
-                                        "before_level": before_level,
-                                        "before_score": before_score,
-                                        "after_level": llm_result.risk_level,
-                                        "after_score": llm_result.risk_score,
-                                    }
+                                    st.session_state[mitigation_key] = response
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"LLM risk re-analysis failed: {e}")
+                                    st.error(f"Failed to generate risk breakdown: {e}")
+                    else:
+                        st.markdown("###### ✅ Simplify Risk — AI Breakdown")
+                        st.markdown(st.session_state[mitigation_key])
 
-                        if reanalysis_key in st.session_state:
-                            r = st.session_state[reanalysis_key]
-                            reduction = r["before_score"] - r["after_score"]
-                            pct = round((reduction / r["before_score"]) * 100) if r["before_score"] else 0
+                        action_cols = st.columns(2)
+                        if action_cols[0].button("🔄 Regenerate", key=f"mitigate_regen_{cid}", width="stretch"):
+                            del st.session_state[mitigation_key]
+                            st.session_state.pop(improved_key, None)
+                            st.rerun()
+                        if action_cols[1].button("📝 Generate Improved Clause", key=f"improve_{cid}", width="stretch"):
+                            with st.spinner("Drafting improved clause wording..."):
+                                try:
+                                    improved = generate_improved_clause(full_text, st.session_state[mitigation_key])
+                                    st.session_state[improved_key] = improved
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to generate improved clause: {e}")
 
-                            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-                            cmp_cols = st.columns([1, 0.3, 1])
-                            with cmp_cols[0]:
-                                st.markdown(
-                                    f'<div class="lq-compare-box"><div class="lq-compare-label">BEFORE</div>'
-                                    f'{render_badge(r["before_level"].upper(), RISK_COLORS.get(r["before_level"], "#888888"))}'
-                                    f'<div class="lq-compare-score">{r["before_score"]}/100</div></div>',
-                                    unsafe_allow_html=True,
+                        if st.session_state.get(improved_key):
+                            st.markdown("###### 📝 Improved Clause")
+                            st.info(st.session_state[improved_key])
+
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+            # ── Re-analyze Risk with AI ──────────────────────────────
+            reanalysis_key = f"reanalysis_{cid}"
+            if render_toggle(f"clause_{cid}_reanalyze_expanded", f"btn_reanalyze_toggle_{cid}", "Re-analyze Risk"):
+                with st.container(border=True):
+                    st.markdown("###### 🔄 Re-analyze Risk")
+                    st.caption("Validate the clause after applying AI recommendations — re-scores it with a fresh LLM legal assessment.")
+
+                    if st.button("Re-analyze with AI", key=f"llm_risk_{cid}", type="primary"):
+                        with st.spinner("🔄 Requesting an LLM risk re-assessment for this clause..."):
+                            try:
+                                from agents.analyzer_agent import analyze_clause_risk_with_llm
+                                before_level = risk_level
+                                before_score = c.get("risk_score") if c.get("risk_score") is not None else 0
+                                llm_result = analyze_clause_risk_with_llm(c["section_name"], full_text)
+                                crud.update_clause_risk(
+                                    clause_id=cid,
+                                    risk_level=llm_result.risk_level,
+                                    risk_category=llm_result.risk_category,
+                                    risk_score=llm_result.risk_score,
+                                    explanation=llm_result.explanation,
                                 )
-                            with cmp_cols[1]:
-                                st.markdown('<div class="lq-compare-arrow">→</div>', unsafe_allow_html=True)
-                            with cmp_cols[2]:
-                                st.markdown(
-                                    f'<div class="lq-compare-box"><div class="lq-compare-label">AFTER</div>'
-                                    f'{render_badge(r["after_level"].upper(), RISK_COLORS.get(r["after_level"], "#888888"))}'
-                                    f'<div class="lq-compare-score">{r["after_score"]}/100</div></div>',
-                                    unsafe_allow_html=True,
-                                )
+                                st.session_state[reanalysis_key] = {
+                                    "before_level": before_level,
+                                    "before_score": before_score,
+                                    "after_level": llm_result.risk_level,
+                                    "after_score": llm_result.risk_score,
+                                }
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"LLM risk re-analysis failed: {e}")
 
-                            st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
-                            if reduction > 0:
-                                st.success(f"✅ Risk reduced by {pct}% ({reduction} points)")
-                            elif reduction < 0:
-                                st.warning(f"⚠️ Risk increased by {abs(pct)}% ({abs(reduction)} points)")
-                            else:
-                                st.caption("No change in risk score.")
+                    if reanalysis_key in st.session_state:
+                        r = st.session_state[reanalysis_key]
+                        reduction = r["before_score"] - r["after_score"]
+                        pct = round((reduction / r["before_score"]) * 100) if r["before_score"] else 0
 
-            st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+                        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+                        cmp_cols = st.columns([1, 0.3, 1])
+                        with cmp_cols[0]:
+                            st.markdown(
+                                f'<div class="lq-compare-box"><div class="lq-compare-label">BEFORE</div>'
+                                f'{render_badge(r["before_level"].upper(), RISK_COLORS.get(r["before_level"], "#888888"))}'
+                                f'<div class="lq-compare-score">{r["before_score"]}/100</div></div>',
+                                unsafe_allow_html=True,
+                            )
+                        with cmp_cols[1]:
+                            st.markdown('<div class="lq-compare-arrow">→</div>', unsafe_allow_html=True)
+                        with cmp_cols[2]:
+                            st.markdown(
+                                f'<div class="lq-compare-box"><div class="lq-compare-label">AFTER</div>'
+                                f'{render_badge(r["after_level"].upper(), RISK_COLORS.get(r["after_level"], "#888888"))}'
+                                f'<div class="lq-compare-score">{r["after_score"]}/100</div></div>',
+                                unsafe_allow_html=True,
+                            )
+
+                        st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+                        if reduction > 0:
+                            st.success(f"✅ Risk reduced by {pct}% ({reduction} points)")
+                        elif reduction < 0:
+                            st.warning(f"⚠️ Risk increased by {abs(pct)}% ({abs(reduction)} points)")
+                        else:
+                            st.caption("No change in risk score.")
+
+        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)

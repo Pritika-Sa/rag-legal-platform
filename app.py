@@ -9,6 +9,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from database.models import init_db
 from database import crud, auth
+from views import dashboard, clause_analysis, risk_analysis, contradiction, comparison
 
 load_dotenv()
 
@@ -58,7 +59,7 @@ st.markdown("""
 
     /* Reduce default top padding so the shared page header sits closer to the top */
     .block-container {
-        padding-top: 2.2rem !important;
+        padding-top: 1.2rem !important;
     }
 
     /* ---------------------------------------------------------------- */
@@ -164,40 +165,101 @@ st.markdown("""
         letter-spacing: 0.02em;
     }
 
-    /* Premium visual KPI cards */
-    .metric-card, .lq-metric-card {
-        background: var(--secondary-background-color);
-        border: 1px solid rgba(128, 128, 128, 0.18);
+    /* ---------------------------------------------------------------- */
+    /* Sidebar profile card                                              */
+    /* ---------------------------------------------------------------- */
+    .lq-profile-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: linear-gradient(135deg, rgba(99, 110, 250, 0.14) 0%, rgba(99, 110, 250, 0.03) 100%);
+        border: 1px solid rgba(99, 110, 250, 0.25);
         border-radius: 14px;
-        padding: 22px;
-        text-align: center;
-        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
-        height: 100%;
+        padding: 14px 16px;
+        margin-bottom: 10px;
     }
-    .metric-card:hover, .lq-metric-card:hover {
-        transform: translateY(-4px);
-        border-color: rgba(99, 110, 250, 0.5);
-        box-shadow: 0 10px 28px rgba(99, 110, 250, 0.18);
-    }
-    .metric-val, .lq-metric-val {
-        font-size: 2.1rem;
+    .lq-profile-avatar {
+        flex-shrink: 0;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
         font-weight: 800;
-        font-family: 'Manrope', sans-serif;
-        color: var(--lq-accent);
-        margin-bottom: 4px;
+        color: white;
+        background: linear-gradient(135deg, var(--lq-accent-dark) 0%, var(--lq-accent-2) 100%);
     }
-    .lq-metric-icon {
-        font-size: 1.4rem;
-        margin-bottom: 6px;
+    .lq-profile-name { font-weight: 700; font-size: 0.95rem; color: var(--text-color); }
+    .lq-profile-email { font-size: 0.76rem; opacity: 0.6; color: var(--text-color); }
+    .lq-profile-workspace {
+        font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em;
+        opacity: 0.5; margin-top: 2px; color: var(--lq-accent);
     }
-    .metric-title, .lq-metric-title {
-        font-size: 0.82rem;
-        text-transform: uppercase;
-        letter-spacing: 1.3px;
-        color: var(--text-color);
-        opacity: 0.6;
-        font-weight: 600;
+
+    /* ---------------------------------------------------------------- */
+    /* Document Management — upload + document cards                    */
+    /* ---------------------------------------------------------------- */
+    .lq-doc-card {
+        border: 1px solid var(--lq-border);
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        background: var(--background-color);
+        transition: border-color 0.2s ease;
+    }
+    .lq-doc-card.active {
+        border-color: var(--lq-accent);
+        box-shadow: 0 0 0 1px var(--lq-accent);
+    }
+    .lq-doc-title { font-weight: 700; font-size: 0.86rem; color: var(--text-color); overflow-wrap: anywhere; }
+    .lq-doc-meta { font-size: 0.7rem; opacity: 0.6; margin-top: 2px; }
+    .lq-status-pill {
+        display: inline-block; font-size: 0.66rem; font-weight: 700;
+        padding: 2px 8px; border-radius: 20px; text-transform: uppercase;
+        letter-spacing: 0.04em; margin-left: 6px;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Sticky top pill navigation                                       */
+    /* ---------------------------------------------------------------- */
+    div[class*="st-key-lq_topnav"] {
+        position: sticky;
+        top: 0;
+        z-index: 998;
+        padding: 10px 6px;
+        margin: 0.9rem -6px 20px -6px;
+        background: color-mix(in srgb, var(--background-color) 85%, transparent);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--lq-border);
+        overflow-x: auto;
+    }
+    div[class*="st-key-lq_topnav"] .stButton>button {
+        border-radius: 999px !important;
+        padding: 8px 16px !important;
+        font-size: 0.85rem !important;
+        white-space: nowrap !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-height: 2.6rem;
+    }
+    div[class*="st-key-lq_topnav"] .stButton>button > div,
+    div[class*="st-key-lq_topnav"] .stButton>button p {
+        white-space: nowrap !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    div[class*="st-key-lq_topnav"] .stButton>button[kind="secondary"] {
+        background: transparent !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--lq-border) !important;
+        box-shadow: none !important;
+    }
+    div[class*="st-key-lq_topnav"] .stButton>button[kind="secondary"]:hover {
+        border-color: rgba(99, 110, 250, 0.5) !important;
+        transform: translateY(-2px) !important;
     }
 
     /* Gradient Button (brand accent, unchanged across themes) */
@@ -279,7 +341,7 @@ st.markdown("""
     ::-webkit-scrollbar-track { background: transparent; }
 
     /* ---------------------------------------------------------------- */
-    /* Consolidated clause card (pages/clause_analysis.py)               */
+    /* Consolidated clause card (views/clause_analysis.py)                */
     /* ---------------------------------------------------------------- */
     .lq-badge {
         display: inline-block;
@@ -344,16 +406,15 @@ st.markdown("""
     }
 
     /* Compact lazy-load toggle rows ("View Original Clause Text" and
-       "Simplified Version") — styled to match the native st.expander rows
-       used elsewhere (e.g. the Mitigation Strategy / Re-analyze Risk
-       controls on the Risk Analysis page) instead of the app's default
-       gradient CTA button. Both have to stay real st.button widgets (not
+       "Simplify Clause") — styled to match the native st.expander rows
+       used elsewhere (e.g. the Simplify Risk / Re-analyze Risk controls
+       on the Risk Analysis page) instead of the app's default gradient
+       CTA button. Both have to stay real st.button widgets (not
        st.expander) so their body only executes once opened — Streamlit
        still executes a collapsed expander's body every rerun, which would
-       defeat lazy-loading for large clause text and would re-call the
-       Simplification agent on every single page interaction. Scoped via
-       the button's own key-derived class (all such buttons share the
-       "btn_clause_" key prefix) so no other button in the app is affected. */
+       defeat lazy-loading for large clause text. Scoped via the button's
+       own key-derived class (all such buttons share the "btn_clause_" key
+       prefix) so no other button in the app is affected. */
     div[class*="st-key-btn_clause_"] .stButton>button {
         background: var(--secondary-background-color) !important;
         color: var(--text-color) !important;
@@ -380,7 +441,7 @@ st.markdown("""
     }
 
     /* ---------------------------------------------------------------- */
-    /* Risk Analysis dashboard (pages/risk_analysis.py)                  */
+    /* Risk Analysis dashboard (views/risk_analysis.py)                   */
     /* ---------------------------------------------------------------- */
     /* Per-clause card — same st-key-derived-class trick as the toggle
        buttons above, applied to a keyed st.container(border=True) so the
@@ -432,7 +493,7 @@ st.markdown("""
         letter-spacing: 0.01em;
     }
 
-    /* "Why was this clause flagged?" bullet list */
+    /* "Explain Risk" bullet list */
     .lq-explanation-list {
         margin: 6px 0 14px 0;
         padding-left: 1.3em;
@@ -472,6 +533,78 @@ st.markdown("""
         font-size: 1.6rem;
         opacity: 0.4;
         padding-top: 28px;
+    }
+
+    /* Premium visual KPI cards */
+    .metric-card, .lq-metric-card {
+        background: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.18);
+        border-radius: 14px;
+        padding: 22px;
+        text-align: center;
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
+        height: 100%;
+    }
+    .metric-card:hover, .lq-metric-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(99, 110, 250, 0.5);
+        box-shadow: 0 10px 28px rgba(99, 110, 250, 0.18);
+    }
+    .metric-val, .lq-metric-val {
+        font-size: 2.1rem;
+        font-weight: 800;
+        font-family: 'Manrope', sans-serif;
+        color: var(--lq-accent);
+        margin-bottom: 4px;
+    }
+    .lq-metric-icon {
+        font-size: 1.4rem;
+        margin-bottom: 6px;
+    }
+    .metric-title, .lq-metric-title {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 1.3px;
+        color: var(--text-color);
+        opacity: 0.6;
+        font-weight: 600;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Floating Legal AI Chat                                            */
+    /* ---------------------------------------------------------------- */
+    div[class*="st-key-lq_chat_fab"] {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 1000;
+        width: auto;
+    }
+    div[class*="st-key-lq_chat_fab"] .stButton>button {
+        border-radius: 50% !important;
+        width: 58px !important;
+        height: 58px !important;
+        padding: 0 !important;
+        font-size: 1.5rem !important;
+        box-shadow: 0 8px 24px rgba(99, 110, 250, 0.45) !important;
+    }
+    div[class*="st-key-lq_chat_panel"] {
+        position: fixed;
+        bottom: 92px;
+        right: 24px;
+        z-index: 1000;
+        width: 400px;
+        max-height: 70vh;
+        overflow-y: auto;
+        background: var(--secondary-background-color);
+        border: 1px solid var(--lq-border);
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+    }
+    @media (max-width: 500px) {
+        div[class*="st-key-lq_chat_panel"] { width: 92vw; right: 4vw; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -575,90 +708,298 @@ if "user" not in st.session_state:
 if st.session_state.user is None:
     render_auth_gate()
 
-# Global Session State
+# ── Global session state ─────────────────────────────────────────────────
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "dashboard"
 if "active_doc_id" not in st.session_state:
     st.session_state.active_doc_id = None
 if "active_doc_name" not in st.session_state:
     st.session_state.active_doc_name = None
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# Sidebar document selector
-st.sidebar.markdown(
-    """
-    <div class="lq-brand">
-        <div class="lq-brand-mark">⚖️ LQ-LegalAI</div>
-        <div class="lq-brand-tag">Legal Intelligence Platform</div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
 
-st.sidebar.markdown(
-    f'<div class="lq-sidebar-card">👤 <strong>{st.session_state.user["name"]}</strong><br>'
-    f'<span style="opacity:0.6;">{st.session_state.user["email"]}</span></div>',
-    unsafe_allow_html=True,
-)
-if st.sidebar.button("Log Out", use_container_width=True):
-    st.session_state.user = None
-    st.session_state.active_doc_id = None
-    st.session_state.active_doc_name = None
-    st.rerun()
-st.sidebar.markdown("---")
+FILE_ICONS = {
+    "pdf": "📕", "docx": "📘", "txt": "📄",
+    "png": "🖼️", "jpg": "🖼️", "jpeg": "🖼️",
+}
+STATUS_COLORS = {"processing": "var(--lq-warning)", "processed": "var(--lq-success)", "failed": "var(--lq-danger)"}
 
-documents = crud.get_all_documents(user_id=st.session_state.user["id"])
-if documents:
-    doc_options = {doc['id']: doc['name'] for doc in documents}
 
-    st.sidebar.caption("ACTIVE WORKSPACE DOCUMENT")
-    # Selected doc configuration
-    selected_id = st.sidebar.selectbox(
-        "Active Workspace Document:",
-        options=list(doc_options.keys()),
-        format_func=lambda x: doc_options[x],
-        label_visibility="collapsed"
+def _file_type(doc_name: str) -> str:
+    return os.path.splitext(doc_name)[1].lstrip(".").lower() or "file"
+
+
+# =============================================================================
+# SIDEBAR — Profile + Document Management only (no page navigation)
+# =============================================================================
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="lq-brand">
+            <div class="lq-brand-mark">⚖️ LQ-LegalAI</div>
+            <div class="lq-brand-tag">Legal Intelligence Platform</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    # Store in session state
-    st.session_state.active_doc_id = selected_id
-    st.session_state.active_doc_name = doc_options[selected_id]
-    st.sidebar.markdown(
-        f'<div class="lq-sidebar-card">📄 <strong>{doc_options[selected_id]}</strong></div>',
+    # ── Profile card (top of sidebar) ────────────────────────────────
+    user = st.session_state.user
+    initials = "".join(part[0].upper() for part in user["name"].split()[:2]) or "U"
+    st.markdown(
+        f"""
+        <div class="lq-profile-card">
+            <div class="lq-profile-avatar">{initials}</div>
+            <div>
+                <div class="lq-profile-name">{user["name"]}</div>
+                <div class="lq-profile-email">{user["email"]}</div>
+                <div class="lq-profile-workspace">Personal Workspace</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Log Out", use_container_width=True):
+        st.session_state.user = None
+        st.session_state.active_doc_id = None
+        st.session_state.active_doc_name = None
+        st.session_state.messages = []
+        st.rerun()
+
+    st.markdown("---")
+
+    # ── Document Management ──────────────────────────────────────────
+    st.markdown("#### 📁 Document Management")
+
+    if "last_analysis_summary" in st.session_state:
+        summary = st.session_state.pop("last_analysis_summary")
+        st.success(f"🎉 '{summary['doc_name']}' processed — {summary['clause_count']} clauses found.")
+        st.caption(
+            f"Risk {summary['document_risk_score']}/100 · Authenticity {summary['authenticity_score']}/100"
+        )
+        if summary.get("parsing_quality_warning"):
+            st.warning(f"⚠️ {summary['parsing_quality_warning']}")
+
+    uploaded_file = st.file_uploader(
+        "Upload a document",
+        type=["pdf", "docx", "txt", "png", "jpg", "jpeg"],
+        help="PDF, Word, or text contracts. Images are OCR'd automatically before analysis.",
+    )
+
+    if uploaded_file is not None:
+        uploads_dir = os.path.join(os.getenv("UPLOADS_DIR", "uploads"), str(user["id"]))
+        os.makedirs(uploads_dir, exist_ok=True)
+        file_path = os.path.join(uploads_dir, uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+
+        if st.button("🚀 Process Document", use_container_width=True, type="primary"):
+            with st.spinner("Processing Status: running multi-agent analysis…"):
+                try:
+                    from agents.orchestrator import run_orchestration
+                    result = run_orchestration(file_path, user_id=user["id"])
+
+                    if result.get("error") and "already analyzed" in result["error"].lower():
+                        st.warning("This document has already been analyzed.")
+                        st.session_state.active_doc_id = result["doc_id"]
+                        st.session_state.active_doc_name = uploaded_file.name
+                        st.rerun()
+                    elif result.get("error"):
+                        if result.get("doc_id"):
+                            crud.update_document_analysis(result["doc_id"], status="failed")
+                        st.error(f"❌ Analysis failed: {result['error']}")
+                    else:
+                        crud.update_document_analysis(result["doc_id"], status="processed")
+                        st.session_state.active_doc_id = result["doc_id"]
+                        st.session_state.active_doc_name = uploaded_file.name
+                        st.session_state.last_analysis_summary = {
+                            "doc_name": uploaded_file.name,
+                            "clause_count": len(result.get("db_clauses", [])),
+                            "document_risk_score": result.get("document_risk_score", 0),
+                            "authenticity_score": result.get("authenticity_score", 0),
+                            "parsing_quality_warning": result.get("parsing_quality_warning"),
+                        }
+                        crud.add_audit_log(
+                            "analysis_completed",
+                            f"Completed multi-agent processing for '{uploaded_file.name}'"
+                        )
+                        st.rerun()
+                except RuntimeError as e:
+                    # e.g. OCR engine not found — user-friendly message, no crash.
+                    st.error(f"⚠️ {e}")
+                except Exception as e:
+                    st.error(f"❌ An error occurred during analysis: {e}")
+
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+    search_query = st.text_input("🔍 Search documents", placeholder="Search by name…", label_visibility="collapsed")
+
+    documents = crud.get_all_documents(user_id=user["id"])
+    if search_query:
+        documents = [d for d in documents if search_query.lower() in d["name"].lower()]
+
+    if not documents:
+        st.info("No documents yet. Upload one above to begin.")
+    else:
+        for doc in documents:
+            is_active = doc["id"] == st.session_state.active_doc_id
+            status = doc.get("status", "processed")
+            status_color = STATUS_COLORS.get(status, "var(--lq-success)")
+            file_type = _file_type(doc["name"])
+            icon = FILE_ICONS.get(file_type, "📁")
+            upload_date = doc.get("upload_date")
+            date_str = upload_date.strftime("%Y-%m-%d") if hasattr(upload_date, "strftime") else str(upload_date or "")
+
+            st.markdown(
+                f"""
+                <div class="lq-doc-card{' active' if is_active else ''}">
+                    <div class="lq-doc-title">{icon} {doc['name']}</div>
+                    <div class="lq-doc-meta">
+                        {file_type.upper()} · {date_str}
+                        <span class="lq-status-pill" style="background:{status_color}33; color:{status_color};">{status}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            btn_cols = st.columns(2)
+            with btn_cols[0]:
+                if st.button(
+                    "✓ Active" if is_active else "Set Active",
+                    key=f"setactive_{doc['id']}", use_container_width=True,
+                    disabled=is_active,
+                ):
+                    st.session_state.active_doc_id = doc["id"]
+                    st.session_state.active_doc_name = doc["name"]
+                    st.rerun()
+            with btn_cols[1]:
+                if st.button("Delete", key=f"delete_{doc['id']}", use_container_width=True):
+                    crud.delete_document(doc["id"])
+                    if is_active:
+                        st.session_state.active_doc_id = None
+                        st.session_state.active_doc_name = None
+                    st.rerun()
+
+    st.markdown(
+        '<div class="lq-sidebar-footer">LQ-LegalAI &middot; Multi-Agent Legal Intelligence</div>',
         unsafe_allow_html=True
     )
-else:
-    st.sidebar.warning("No documents uploaded yet.")
-    st.session_state.active_doc_id = None
-    st.session_state.active_doc_name = None
-
-st.sidebar.markdown("---")
-st.sidebar.info("💡 Select a document above, then navigate using the pages menu to audit and interact.")
-st.sidebar.markdown(
-    '<div class="lq-sidebar-footer">LQ-LegalAI &middot; Multi-Agent Legal Intelligence</div>',
-    unsafe_allow_html=True
-)
 
 
-# Define Pages
-pg_dashboard = st.Page("pages/dashboard.py", title="1. Dashboard", icon="📊", default=True)
-pg_upload = st.Page("pages/upload.py", title="2. Upload Document", icon="📤")
-pg_clause = st.Page("pages/clause_analysis.py", title="3. Clause Analysis", icon="📑")
-pg_risk = st.Page("pages/risk_analysis.py", title="4. Risk Analysis", icon="⚠️")
-pg_contradiction = st.Page("pages/contradiction.py", title="5. Contradiction Detection", icon="⚡")
-pg_simplification = st.Page("pages/simplification.py", title="6. Simplification", icon="✨")
-pg_translation = st.Page("pages/translation.py", title="7. Translation", icon="🌍")
-pg_qa = st.Page("pages/legal_qa.py", title="8. Legal Q&A", icon="💬")
-pg_comparison = st.Page("pages/comparison.py", title="9. Comparison Center", icon="🔄")
-pg_kg = st.Page("pages/knowledge_graph.py", title="10. Knowledge Graph", icon="🕸️")
-pg_dg = st.Page("pages/dependency_graph.py", title="11. Dependency Graph", icon="🔗")
-pg_re = st.Page("pages/risk_evolution.py", title="12. Risk Evolution", icon="📈")
-pg_vh = st.Page("pages/version_history.py", title="13. Version History", icon="🕒")
-pg_audit = st.Page("pages/audit_report.py", title="14. Audit Report", icon="📋")
+# =============================================================================
+# TOP NAVIGATION — sticky pill bar
+# =============================================================================
+NAV_ITEMS = [
+    ("dashboard", "📊 Dashboard"),
+    ("clause_analysis", "🔍 Clause Analysis"),
+    ("risk_analysis", "⚠️ Risk Analysis"),
+    ("contradiction", "⚡ Contradiction Detection"),
+    ("comparison", "🔀 Comparison Center"),
+]
 
-pg = st.navigation({
-    "Core Platform": [pg_dashboard, pg_upload],
-    "Analytics & Risk": [pg_clause, pg_risk, pg_contradiction, pg_comparison],
-    "AI Tools": [pg_simplification, pg_translation, pg_qa],
-    "Visualizations": [pg_kg, pg_dg, pg_re],
-    "Governance": [pg_vh, pg_audit]
-})
+with st.container(key="lq_topnav"):
+    # An equal 5-way split wraps "Contradiction Detection" onto two lines
+    # (it's the longest label), throwing off the whole pill row's height —
+    # give it extra width, taken evenly from the shorter labels either side.
+    NAV_COL_WEIGHTS = [1.0, 1.15, 1.05, 1.55, 1.15]
+    nav_cols = st.columns(NAV_COL_WEIGHTS)
+    for col, (page_key, label) in zip(nav_cols, NAV_ITEMS):
+        with col:
+            is_current = st.session_state.current_page == page_key
+            if st.button(
+                label, key=f"navbtn_{page_key}", use_container_width=True,
+                type="primary" if is_current else "secondary",
+            ):
+                st.session_state.current_page = page_key
+                st.rerun()
 
-pg.run()
+# =============================================================================
+# DYNAMIC CONTENT AREA
+# =============================================================================
+PAGE_RENDERERS = {
+    "dashboard": dashboard.render,
+    "clause_analysis": clause_analysis.render,
+    "risk_analysis": risk_analysis.render,
+    "contradiction": contradiction.render,
+    "comparison": comparison.render,
+}
+PAGE_RENDERERS[st.session_state.current_page]()
+
+
+# =============================================================================
+# FLOATING LEGAL AI CHAT
+# =============================================================================
+with st.container(key="lq_chat_fab"):
+    if st.button("💬" if not st.session_state.chat_open else "✕", key="lq_chat_toggle"):
+        st.session_state.chat_open = not st.session_state.chat_open
+        st.rerun()
+
+if st.session_state.chat_open:
+    with st.container(key="lq_chat_panel"):
+        st.markdown("##### 💬 Legal AI Assistant")
+
+        in_comparison = st.session_state.current_page == "comparison"
+        comparison_doc_a_id = st.session_state.get("comparison_doc_a_id")
+        comparison_doc_b_id = st.session_state.get("comparison_doc_b_id")
+
+        target_doc_id = st.session_state.active_doc_id
+        scope_caption = f"Scope: active document ({st.session_state.active_doc_name})" if target_doc_id else "Scope: entire workspace"
+
+        if in_comparison and comparison_doc_a_id and comparison_doc_b_id:
+            all_docs = {d["id"]: d["name"] for d in crud.get_all_documents(user_id=user["id"])}
+            scope_choice = st.selectbox(
+                "Answer using:",
+                options=[comparison_doc_a_id, comparison_doc_b_id],
+                format_func=lambda x: all_docs.get(x, f"Doc {x}"),
+                key="chat_comparison_scope",
+            )
+            target_doc_id = scope_choice
+            scope_caption = f"Scope: {all_docs.get(target_doc_id, 'compared document')} (Comparison Center)"
+
+        st.caption(scope_caption)
+
+        top_row = st.columns([1, 1])
+        with top_row[0]:
+            if st.button("🗑️ Clear Chat", key="chat_clear", use_container_width=True):
+                st.session_state.messages = []
+                st.rerun()
+        with top_row[1]:
+            if st.button("➖ Minimize", key="chat_minimize", use_container_width=True):
+                st.session_state.chat_open = False
+                st.rerun()
+
+        if not st.session_state.messages:
+            st.caption("Suggested questions:")
+            for q in ["What is the termination clause?", "What are my obligations?", "Is there a liability cap?"]:
+                if st.button(q, key=f"suggest_{q}", use_container_width=True):
+                    st.session_state.chat_pending_query = q
+                    st.rerun()
+
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg["role"] == "assistant" and "result_payload" in msg:
+                    res = msg["result_payload"]
+                    with st.expander("🔍 Citations"):
+                        for sc in res.supporting_clauses:
+                            st.markdown(f"- {sc}")
+
+        pending_query = st.session_state.pop("chat_pending_query", None)
+        typed_query = st.chat_input("Ask a legal question…")
+        prompt = pending_query or typed_query
+
+        if prompt:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.spinner("Agent 9 is retrieving and validating answers…"):
+                try:
+                    from agents.qa_agent import answer_legal_question
+                    doc_id_str = str(target_doc_id) if target_doc_id else None
+                    result = answer_legal_question(prompt, doc_id_str)
+                    st.session_state.messages.append({
+                        "role": "assistant", "content": result.answer, "result_payload": result,
+                    })
+                except Exception as e:
+                    st.session_state.messages.append({"role": "assistant", "content": f"Failed to answer: {e}"})
+            st.rerun()

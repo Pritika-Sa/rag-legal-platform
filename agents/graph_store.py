@@ -9,7 +9,7 @@ consumed by agents/orchestrator.py, not a replacement for either agent or
 their pages.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import networkx as nx
 
@@ -123,48 +123,6 @@ def subgraph_for_clause(g: nx.MultiDiGraph, clause_id: str, radius: int = 1) -> 
         return new_graph()
     nodes = nx.ego_graph(g.to_undirected(as_view=True), clause_id, radius=radius).nodes
     return g.subgraph(nodes).copy()
-
-
-def to_pyvis_dicts(g: nx.MultiDiGraph) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Exports (nodes, edges) in the exact shape
-    utils/visualizer.py::render_pyvis_graph already expects."""
-    nodes = [
-        {
-            "id": node_id,
-            "label": attrs.get("label", node_id),
-            "color": attrs.get("color", "#888888"),
-            "size": 22 if attrs.get("node_type") == "clause" else 15,
-        }
-        for node_id, attrs in g.nodes(data=True)
-    ]
-    edges = [
-        {
-            "source": u,
-            "target": v,
-            "label": attrs.get("relation", ""),
-            "color": attrs.get("color", "#888888"),
-        }
-        for u, v, attrs in g.edges(data=True)
-    ]
-    return nodes, edges
-
-
-def describe_kg_edges(kg_data: Dict[str, Any]) -> List[str]:
-    """Deterministic, plain-language explanation of a knowledge_graph_agent
-    graph (Stage 2, no LLM) — resolves each edge's source/target node ids to
-    their labels and renders 'X --relation--> Y' as a sentence, since the
-    diagram alone can be hard to read for relations that aren't visually
-    obvious. Used by pages/knowledge_graph.py to show a text list alongside
-    the pyvis rendering; extract_knowledge_graph()'s return shape is
-    untouched, so this is purely additive."""
-    labels = {node["id"]: node.get("label", node["id"]) for node in kg_data.get("nodes", [])}
-    descriptions = []
-    for edge in kg_data.get("edges", []):
-        source_label = labels.get(edge["source"], edge["source"])
-        target_label = labels.get(edge["target"], edge["target"])
-        relation = edge.get("label", "related to")
-        descriptions.append(f"**{source_label}** — *{relation}* → **{target_label}**")
-    return descriptions
 
 
 def flatten_entities(doc_id: int, kg_data: Dict[str, Any]) -> List[Dict[str, Any]]:
