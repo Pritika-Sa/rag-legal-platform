@@ -18,7 +18,8 @@ from agents.dependency_agent import extract_clause_dependencies
 from agents.authenticity_agent import assess_document_authenticity
 from agents.audit_agent import perform_macro_audit
 from agents import graph_store
-from utils.doc_classifier import detect_language, detect_document_type
+from services.document_classifier import classify_document_type
+from utils.doc_classifier import detect_language
 
 from database import crud
 from vectorstore import chroma_client
@@ -99,7 +100,7 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
     ]
 
     doc_language = detect_language(full_text)
-    doc_type = detect_document_type(full_text)
+    doc_type = classify_document_type(full_text)
 
     try:
         identified_objects = identify_clauses(full_text, page_mapping)

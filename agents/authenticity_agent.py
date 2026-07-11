@@ -29,10 +29,11 @@ _LEADING_NUM_RE = re.compile(r"^(\d+)(?:\.\d+)*")
 _PO_BOX_RE = re.compile(r"P\.?O\.?\s*Box\s*\d+", re.IGNORECASE)
 _POSTAL_CODE_RE = re.compile(r"\b\d{5,6}\b")
 
-# document_type values that conventionally require a witness — none of the
-# current utils.doc_classifier.DOCUMENT_TYPE_KEYWORDS categories are in this
-# set today, so this check is a soft warning in practice until the document
-# type taxonomy grows to include witness-requiring instruments.
+# document_type values that conventionally require a witness. Matched
+# exactly against services.document_classifier's output — "Affidavit" and
+# "Will" are classifier categories, so this check is active for those;
+# "Deed" doesn't match the classifier's "Sale Deed" category exactly, so
+# that one stays dormant unless a document is literally typed "Deed".
 WITNESS_REQUIRED_TYPES = {"Deed", "Affidavit", "Will"}
 
 MIN_REALISTIC_CHARS = 500
