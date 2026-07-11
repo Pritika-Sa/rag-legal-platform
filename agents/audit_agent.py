@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
+from services.prompt_builder import build_summary_prompt
 from utils.llm_client import invoke_llm_structured
 
 
@@ -17,14 +18,16 @@ def perform_macro_audit(doc_name: str, clauses: List[Dict[str, Any]], contradict
     high_risks = sum(1 for c in clauses if c.get('risk_level') == 'High')
     med_risks = sum(1 for c in clauses if c.get('risk_level') == 'Medium')
 
-    context = f"Document: {doc_name}\n"
-    context += f"Total Clauses: {len(clauses)}\n"
-    context += f"High Risks: {high_risks}, Medium Risks: {med_risks}\n"
-    context += f"Contradictions Found: {len(contradictions)}\n"
-
-    context += "\nSample High Risk Clauses:\n"
-    for c in [c for c in clauses if c.get('risk_level') == 'High'][:3]:
-        context += f"- {c['section_name']}: {c['text_content'][:200]}...\n"
+    stats = {
+        "Total Clauses": len(clauses),
+        "High Risks, Medium Risks": f"{high_risks}, {med_risks}",
+        "Contradictions Found": len(contradictions),
+    }
+    sample_lines = [
+        f"{c['section_name']}: {c['text_content'][:200]}..."
+        for c in [c for c in clauses if c.get('risk_level') == 'High'][:3]
+    ]
+    context = build_summary_prompt(doc_name, stats, sample_lines)
 
     system_instruction = (
         "You are the Master Audit Agent. Review the summary of document parsing, "

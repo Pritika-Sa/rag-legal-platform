@@ -15,6 +15,7 @@ from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, TypedDict
 
 from agents.rule_engine import detect_query_intent
+from services.prompt_builder import build_context_block
 from utils.hybrid_search import fuse_vector_and_bm25
 from utils.reranker import rerank_documents
 from vectorstore import chroma_client
@@ -102,8 +103,8 @@ def compress_context(query: str, chunks: list, max_sentences_per_chunk: int = MA
     awareness) with a relevance-aware trim applied before the prompt is
     even built."""
     query_terms = _content_terms(query)
-    context_str = ""
-    for idx, doc in enumerate(chunks):
+    blocks: List[Any] = []
+    for doc in chunks:
         meta = doc.metadata
         sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(doc.page_content.strip()) if s.strip()]
         scored = [(i, s, _score_sentence(query_terms, s)) for i, s in enumerate(sentences)]
@@ -128,11 +129,6 @@ def compress_context(query: str, chunks: list, max_sentences_per_chunk: int = MA
 
         ordered = [sentences[i] for i in sorted(kept_indices)]
         compressed_block = " ".join(ordered)
+        blocks.append((meta, compressed_block))
 
-        context_str += (
-            f"--- Context Block {idx+1} "
-            f"(Doc ID: {meta.get('document_id', meta.get('doc_id'))}, "
-            f"Section: {meta.get('clause_type', 'Unknown')}) ---\n"
-            f"{compressed_block}\n\n"
-        )
-    return context_str
+    return build_context_block(blocks)
