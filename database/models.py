@@ -5,8 +5,14 @@ def init_db():
     """Initializes MongoDB collections and creates indexes."""
     db = get_db()
 
-    db.documents.create_index("name", unique=True)
+    db.users.create_index("email", unique=True)
+    db.users.create_index("reset_token_hash")
+
+    # Unique per-user, not globally - different users may each upload a file
+    # named e.g. "contract.pdf" without colliding.
+    db.documents.create_index([("user_id", 1), ("name", 1)], unique=True)
     db.documents.create_index("hash")
+    db.documents.create_index("user_id")
 
     db.clauses.create_index("doc_id")
     db.clauses.create_index([("doc_id", 1), ("section_name", 1)])
@@ -30,7 +36,7 @@ def init_db():
     db.retrieval_history.create_index("doc_id_scope")
 
     for collection_name in (
-        "documents", "clauses", "contradictions", "clause_versions", "audit_logs",
+        "users", "documents", "clauses", "contradictions", "clause_versions", "audit_logs",
         "pages", "entities", "relationships", "retrieval_history",
     ):
         db.counters.update_one(

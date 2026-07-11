@@ -9,10 +9,11 @@ def _now():
 
 # ── Documents ──────────────────────────────────────────────────────────────
 
-def add_document(name, path, file_hash):
-    """Inserts a new document and returns its integer ID."""
+def add_document(name, path, file_hash, user_id=None):
+    """Inserts a new document and returns its integer ID. Dedup (by name) is
+    scoped per-user - two different users may each own a same-named file."""
     db = get_db()
-    existing = db.documents.find_one({"name": name})
+    existing = db.documents.find_one({"name": name, "user_id": user_id})
     if existing:
         return existing["id"]
 
@@ -22,22 +23,33 @@ def add_document(name, path, file_hash):
         "name": name,
         "path": path,
         "hash": file_hash,
+        "user_id": user_id,
         "upload_date": _now(),
     })
     add_audit_log("document_upload", f"Uploaded document '{name}' (ID: {doc_id})")
     return doc_id
 
 
-def get_document_by_hash(file_hash):
-    """Retrieves document by its hash."""
+def get_document_by_hash(file_hash, user_id=None):
+    """Retrieves document by its hash, scoped to `user_id` when given so two
+    different users uploading identical file content each get their own
+    document instead of the second user being pointed at the first user's
+    (otherwise-invisible-to-them) document."""
     db = get_db()
-    return db.documents.find_one({"hash": file_hash})
+    query = {"hash": file_hash}
+    if user_id is not None:
+        query["user_id"] = user_id
+    return db.documents.find_one(query)
 
 
-def get_all_documents():
-    """Retrieves all documents, newest first."""
+def get_all_documents(user_id=None):
+    """Retrieves documents, newest first. Scoped to `user_id` when given -
+    every page reaches a doc_id through this listing (or through a
+    session_state value seeded by it), so filtering here is what keeps each
+    user's workspace private."""
     db = get_db()
-    return list(db.documents.find().sort("upload_date", -1))
+    query = {"user_id": user_id} if user_id is not None else {}
+    return list(db.documents.find(query).sort("upload_date", -1))
 
 
 def get_document_by_id(doc_id):
@@ -407,8 +419,10 @@ def get_audit_logs(limit=50):
 
 # ── Dashboard Metrics ──────────────────────────────────────────────────────
 
-def get_dashboard_metrics(doc_id=None):
-    """Aggregates metrics for the dashboard page."""
+def get_dashboard_metrics(doc_id=None, user_id=None):
+    """Aggregates metrics for the dashboard page. When `doc_id` is omitted,
+    `user_id` scopes the aggregate workspace metrics to that user's own
+    documents."""
     db = get_db()
 
     if doc_id:
@@ -426,14 +440,20 @@ def get_dashboard_metrics(doc_id=None):
         risk_dist = {r["_id"]: r["count"] for r in db.clauses.aggregate(pipeline)}
         total_documents = 1
     else:
-        total_documents = db.documents.count_documents({})
-        total_clauses = db.clauses.count_documents({})
-        total_contradictions = db.contradictions.count_documents({})
+        doc_query = {"user_id": user_id} if user_id is not None else {}
+        doc_ids = [d["id"] for d in db.documents.find(doc_query, {"id": 1})]
+        clause_query = {"doc_id": {"$in": doc_ids}}
+
+        total_documents = len(doc_ids)
+        total_clauses = db.clauses.count_documents(clause_query)
+        total_contradictions = db.contradictions.count_documents({"doc_id": {"$in": doc_ids}})
         risky_clauses = db.clauses.count_documents({
+            **clause_query,
             "risk_level": {"$in": ["High", "Medium"]},
         })
 
         pipeline = [
+            {"$match": clause_query},
             {"$group": {"_id": "$risk_level", "count": {"$sum": 1}}},
         ]
         risk_dist = {r["_id"]: r["count"] for r in db.clauses.aggregate(pipeline)}

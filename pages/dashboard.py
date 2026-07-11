@@ -22,10 +22,11 @@ if doc_id:
     authenticity_display = f"{active_doc.get('authenticity_score')}/100" if active_doc and active_doc.get("authenticity_score") is not None else "Not yet analyzed"
 else:
     st.warning("No active document selected. Showing aggregate workspace metrics.")
-    metrics = crud.get_dashboard_metrics()
-    # For aggregate workspace, fetch clauses from all documents
+    user_id = st.session_state.user["id"]
+    metrics = crud.get_dashboard_metrics(user_id=user_id)
+    # For aggregate workspace, fetch clauses from all of this user's documents
     clauses = []
-    documents = crud.get_all_documents()
+    documents = crud.get_all_documents(user_id=user_id)
     for doc in documents:
         clauses.extend(crud.get_clauses_for_document(doc['id']))
     scored_docs = [d for d in documents if d.get("authenticity_score") is not None]

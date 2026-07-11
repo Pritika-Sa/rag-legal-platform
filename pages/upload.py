@@ -54,10 +54,11 @@ if "last_analysis_summary" in st.session_state:
 uploaded_file = st.file_uploader("Choose a legal file", type=["pdf", "docx"])
 
 if uploaded_file is not None:
-    # Save the file locally
-    uploads_dir = os.getenv("UPLOADS_DIR", "uploads")
+    # Save the file locally, namespaced per-user so two users uploading a
+    # same-named file don't overwrite each other on disk.
+    uploads_dir = os.path.join(os.getenv("UPLOADS_DIR", "uploads"), str(st.session_state.user["id"]))
     os.makedirs(uploads_dir, exist_ok=True)
-    
+
     file_path = os.path.join(uploads_dir, uploaded_file.name)
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
@@ -69,7 +70,7 @@ if uploaded_file is not None:
         with st.spinner("Executing Multi-Agent LangGraph Orchestration... (Parsing & Risk Assessment)"):
             try:
                 # Run the LangGraph orchestration flow
-                result = run_orchestration(file_path)
+                result = run_orchestration(file_path, user_id=st.session_state.user["id"])
                 
                 if result.get("error") and "already analyzed" in result["error"].lower():
                     st.warning("⚠️ This document has already been analyzed and is available in the workspace.")
@@ -104,7 +105,7 @@ st.markdown("---")
 
 # List existing documents in system
 st.subheader("signed agreements in Workspace")
-docs = crud.get_all_documents()
+docs = crud.get_all_documents(user_id=st.session_state.user["id"])
 if docs:
     for doc in docs:
         col1, col2 = st.columns([4, 1])

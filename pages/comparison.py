@@ -11,7 +11,7 @@ render_header(
     badge="Agent 10"
 )
 
-documents = crud.get_all_documents()
+documents = crud.get_all_documents(user_id=st.session_state.user["id"])
 
 if len(documents) < 2:
     st.info("⚠️ You need at least two documents in the workspace to perform comparison. Please upload another file.")

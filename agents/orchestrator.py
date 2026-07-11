@@ -26,6 +26,7 @@ from vectorstore import chroma_client
 
 class AgentState(TypedDict):
     file_path: str
+    user_id: int
     doc_name: str
     doc_hash: str
     doc_id: int
@@ -62,13 +63,13 @@ def parse_document_node(state: AgentState) -> Dict[str, Any]:
     doc_name = os.path.basename(file_path)
     try:
         doc_hash = get_file_hash(file_path)
-        existing_doc = crud.get_document_by_hash(doc_hash)
+        existing_doc = crud.get_document_by_hash(doc_hash, user_id=state.get("user_id"))
         if existing_doc:
             return {"doc_name": doc_name, "doc_hash": doc_hash, "doc_id": existing_doc['id'],
                     "error": "Document already analyzed."}
 
         raw_sections = enforce_chunk_bounds(parse_document(file_path))
-        doc_id = crud.add_document(doc_name, file_path, doc_hash)
+        doc_id = crud.add_document(doc_name, file_path, doc_hash, user_id=state.get("user_id"))
 
         pages = parse_document_pages(file_path)
         if pages:
@@ -338,10 +339,11 @@ def build_orchestrator():
     return workflow.compile()
 
 
-def run_orchestration(file_path: str) -> Dict[str, Any]:
+def run_orchestration(file_path: str, user_id: int = None) -> Dict[str, Any]:
     app = build_orchestrator()
     initial_state = {
         "file_path": file_path,
+        "user_id": user_id,
         "doc_name": "", "doc_hash": "", "doc_id": -1,
         "raw_sections": [], "identified_clauses": [],
         "db_clauses": [], "contradictions": [],

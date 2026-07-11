@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore", message=".*huggingface_hub.*cache.*symlinks.*"
 import streamlit as st
 from dotenv import load_dotenv
 from database.models import init_db
-from database import crud
+from database import crud, auth
 
 load_dotenv()
 
@@ -378,6 +378,101 @@ st.markdown("""
         transform: none !important;
         box-shadow: 0 2px 8px rgba(99, 110, 250, 0.12) !important;
     }
+
+    /* ---------------------------------------------------------------- */
+    /* Risk Analysis dashboard (pages/risk_analysis.py)                  */
+    /* ---------------------------------------------------------------- */
+    /* Per-clause card — same st-key-derived-class trick as the toggle
+       buttons above, applied to a keyed st.container(border=True) so the
+       flagged-clause cards get a heavier "enterprise SaaS" treatment than
+       Streamlit's plain default bordered box. */
+    div[class*="st-key-riskcard_"] {
+        border-radius: 16px !important;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+        transition: box-shadow 0.25s ease, border-color 0.25s ease;
+        padding: 4px 6px 10px 6px;
+    }
+    div[class*="st-key-riskcard_"]:hover {
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+    }
+
+    /* Fade-truncated clause preview (~5 lines, gradient fade into the
+       card background instead of a hard cutoff). */
+    div[class*="st-key-clausepreview_"] p {
+        display: -webkit-box;
+        -webkit-line-clamp: 5;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        position: relative;
+        max-height: 8.2em;
+        line-height: 1.55;
+        margin-bottom: 0 !important;
+    }
+    div[class*="st-key-clausepreview_"] {
+        position: relative;
+    }
+    div[class*="st-key-clausepreview_"]::after {
+        content: "";
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        height: 2.2em;
+        background: linear-gradient(to bottom, transparent, var(--secondary-background-color));
+        pointer-events: none;
+    }
+
+    /* Risk factor chips — subtle tinted pills, color set inline per-chip. */
+    .lq-risk-chip {
+        display: inline-block;
+        font-size: 0.76rem;
+        font-weight: 700;
+        padding: 4px 12px;
+        margin: 2px 6px 2px 0;
+        border-radius: 20px;
+        border: 1px solid;
+        letter-spacing: 0.01em;
+    }
+
+    /* "Why was this clause flagged?" bullet list */
+    .lq-explanation-list {
+        margin: 6px 0 14px 0;
+        padding-left: 1.3em;
+    }
+    .lq-explanation-list li {
+        margin-bottom: 7px;
+        font-size: 0.92rem;
+        line-height: 1.5;
+        color: var(--text-color);
+        opacity: 0.9;
+    }
+
+    /* Before/After risk comparison (Re-analyze result) */
+    .lq-compare-box {
+        text-align: center;
+        background: var(--secondary-background-color);
+        border: 1px solid var(--lq-border);
+        border-radius: 12px;
+        padding: 14px 10px;
+    }
+    .lq-compare-label {
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        opacity: 0.55;
+        margin-bottom: 8px;
+    }
+    .lq-compare-score {
+        font-size: 1.2rem;
+        font-weight: 800;
+        font-family: 'Manrope', sans-serif;
+        margin-top: 8px;
+        color: var(--text-color);
+    }
+    .lq-compare-arrow {
+        text-align: center;
+        font-size: 1.6rem;
+        opacity: 0.4;
+        padding-top: 28px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -387,6 +482,98 @@ init_db()
 # Ensure directories exist
 os.makedirs(os.getenv("UPLOADS_DIR", "uploads"), exist_ok=True)
 os.makedirs(os.getenv("REPORTS_DIR", "reports"), exist_ok=True)
+
+
+def render_auth_gate():
+    """Blocks the rest of the app until the user is logged in. Handles
+    login, signup, requesting a password-reset email, and consuming a
+    reset link (?reset_token=... from that email) to set a new password."""
+    st.markdown(
+        """
+        <div class="lq-brand" style="padding-top: 24px;">
+            <div class="lq-brand-mark">⚖️ LQ-LegalAI</div>
+            <div class="lq-brand-tag">Legal Intelligence Platform</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, center, _ = st.columns([1, 1.3, 1])
+    with center:
+        reset_token = st.query_params.get("reset_token")
+        if reset_token:
+            st.subheader("🔑 Set a New Password")
+            with st.form("reset_password_form"):
+                new_password = st.text_input("New password", type="password")
+                confirm_password = st.text_input("Confirm new password", type="password")
+                submitted = st.form_submit_button("Reset Password", use_container_width=True)
+            if submitted:
+                if new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                elif auth.reset_password(reset_token, new_password):
+                    st.success("Password reset. You can now log in below.")
+                    st.query_params.clear()
+                else:
+                    st.error("This reset link is invalid or has expired. Request a new one from the Forgot Password tab.")
+                    if st.button("Back to login"):
+                        st.query_params.clear()
+                        st.rerun()
+            st.stop()
+
+        tab_login, tab_signup, tab_forgot = st.tabs(["Log In", "Sign Up", "Forgot Password"])
+
+        with tab_login:
+            with st.form("login_form"):
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Log In", use_container_width=True)
+            if submitted:
+                user = auth.authenticate(email, password)
+                if user:
+                    st.session_state.user = user
+                    st.rerun()
+                else:
+                    st.error("Invalid email or password.")
+
+        with tab_signup:
+            with st.form("signup_form"):
+                name = st.text_input("Full name")
+                email = st.text_input("Email", key="signup_email")
+                password = st.text_input("Password", type="password", key="signup_password", help="At least 8 characters.")
+                confirm_password = st.text_input("Confirm password", type="password", key="signup_confirm")
+                submitted = st.form_submit_button("Create Account", use_container_width=True)
+            if submitted:
+                if password != confirm_password:
+                    st.error("Passwords do not match.")
+                else:
+                    try:
+                        user = auth.create_user(name, email, password)
+                        st.session_state.user = user
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
+
+        with tab_forgot:
+            st.caption("Enter your account email and we'll send you a reset link.")
+            with st.form("forgot_password_form"):
+                email = st.text_input("Email", key="forgot_email")
+                submitted = st.form_submit_button("Send Reset Link", use_container_width=True)
+            if submitted:
+                token = auth.request_password_reset(email)
+                if token:
+                    auth.send_reset_email(email.strip().lower(), token)
+                # Same message whether or not the email is registered, so this
+                # can't be used to enumerate valid accounts.
+                st.success("If an account exists for that email, a reset link has been sent.")
+
+    st.stop()
+
+
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if st.session_state.user is None:
+    render_auth_gate()
 
 # Global Session State
 if "active_doc_id" not in st.session_state:
@@ -405,7 +592,19 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 
-documents = crud.get_all_documents()
+st.sidebar.markdown(
+    f'<div class="lq-sidebar-card">👤 <strong>{st.session_state.user["name"]}</strong><br>'
+    f'<span style="opacity:0.6;">{st.session_state.user["email"]}</span></div>',
+    unsafe_allow_html=True,
+)
+if st.sidebar.button("Log Out", use_container_width=True):
+    st.session_state.user = None
+    st.session_state.active_doc_id = None
+    st.session_state.active_doc_name = None
+    st.rerun()
+st.sidebar.markdown("---")
+
+documents = crud.get_all_documents(user_id=st.session_state.user["id"])
 if documents:
     doc_options = {doc['id']: doc['name'] for doc in documents}
 
