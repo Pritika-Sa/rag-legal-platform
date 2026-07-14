@@ -161,6 +161,15 @@ def get_clauses_for_document(doc_id):
     return list(db.clauses.find({"doc_id": doc_id}).sort("id", 1))
 
 
+def update_clause_title(clause_id, section_name):
+    """Overwrites just a clause's display title (section_name) — used to
+    backfill clauses ingested before clause_title generation existed, whose
+    section_name is still the bare category name (see
+    agents.clause_identifier_agent.backfill_clause_titles_for_document)."""
+    db = get_db()
+    db.clauses.update_one({"id": clause_id}, {"$set": {"section_name": section_name}})
+
+
 def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explanation, source="LLM"):
     """Overwrites a clause's risk fields (e.g. after an on-demand LLM
     re-analysis) without touching text_content/version — this isn't an edit
@@ -186,34 +195,79 @@ def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explana
 
 
 # ── Contradictions ─────────────────────────────────────────────────────────
+# Stored at issue level, not pair level: one row may cover more than two
+# clauses (e.g. one clause conflicting with three others on the same point),
+# so clause_ids is a list, not a fixed clause_id_1/clause_id_2 pair.
 
-def add_contradiction(doc_id, clause_id_1, clause_id_2, explanation, severity="Medium"):
-    """Inserts a detected contradiction."""
+def replace_contradictions_for_document(doc_id, items):
+    """Overwrites all persisted contradictions for a document with a fresh
+    set. `items` are ContradictionItem-like objects/dicts carrying
+    clause_ids/clause_values/contradiction_type/severity/explanation/
+    resolution (see agents/contradiction_agent.py, already consolidated to
+    issue level). Used every time contradiction detection is (re)run for a
+    document — at ingestion (rule-based only) and the first time the
+    Contradiction page is opened (rule-based + AI) — so db.contradictions
+    always holds the latest, most complete analysis instead of accumulating
+    duplicates across runs."""
     db = get_db()
-    c_id = _get_next_id("contradictions")
-    db.contradictions.insert_one({
-        "id": c_id,
-        "doc_id": doc_id,
-        "clause_id_1": clause_id_1,
-        "clause_id_2": clause_id_2,
-        "explanation": explanation,
-        "severity": severity,
-    })
-    return c_id
+    db.contradictions.delete_many({"doc_id": doc_id})
+    if not items:
+        return []
+
+    def _get(item, field, default=None):
+        value = item.get(field) if isinstance(item, dict) else getattr(item, field, None)
+        return default if value is None else value
+
+    n = len(items)
+    result = db.counters.find_one_and_update(
+        {"_id": "contradictions"},
+        {"$inc": {"seq": n}},
+        return_document=True,
+    )
+    end_id = result["seq"]
+    ids = list(range(end_id - n + 1, end_id + 1))
+
+    docs = [
+        {
+            "id": c_id,
+            "doc_id": doc_id,
+            "clause_ids": _get(item, "clause_ids", []),
+            "clause_values": _get(item, "clause_values", {}),
+            "contradiction_type": _get(item, "contradiction_type"),
+            "explanation": _get(item, "explanation"),
+            "resolution": _get(item, "resolution"),
+            "severity": _get(item, "severity"),
+        }
+        for c_id, item in zip(ids, items)
+    ]
+    db.contradictions.insert_many(docs)
+    return ids
 
 
 def get_contradictions_for_document(doc_id):
-    """Gets all contradictions in a document with clause details joined."""
+    """Gets all contradictions in a document, each with its affected clauses'
+    section names/text joined in. Falls back to the older clause_id_1/
+    clause_id_2 pair shape for any row persisted before consolidation to
+    issue level existed, so a document isn't left broken until it's
+    next re-analyzed."""
     db = get_db()
     contradictions = list(db.contradictions.find({"doc_id": doc_id}))
 
     for c in contradictions:
-        cl1 = db.clauses.find_one({"id": c["clause_id_1"]})
-        cl2 = db.clauses.find_one({"id": c["clause_id_2"]})
-        c["section_1"] = cl1["section_name"] if cl1 else ""
-        c["text_1"] = cl1["text_content"] if cl1 else ""
-        c["section_2"] = cl2["section_name"] if cl2 else ""
-        c["text_2"] = cl2["text_content"] if cl2 else ""
+        clause_ids = c.get("clause_ids")
+        if not clause_ids:
+            clause_ids = [cid for cid in (c.get("clause_id_1"), c.get("clause_id_2")) if cid is not None]
+
+        affected = []
+        for cid in clause_ids:
+            clause = db.clauses.find_one({"id": cid})
+            affected.append({
+                "id": cid,
+                "section_name": clause["section_name"] if clause else "",
+                "text_content": clause["text_content"] if clause else "",
+                "value": (c.get("clause_values") or {}).get(str(cid)),
+            })
+        c["affected_clauses"] = affected
 
     return contradictions
 
@@ -368,47 +422,40 @@ def get_audit_logs(limit=50):
 
 # ── Dashboard Metrics ──────────────────────────────────────────────────────
 
-def get_dashboard_metrics(doc_id=None, user_id=None):
-    """Aggregates metrics for the dashboard page. When `doc_id` is omitted,
-    `user_id` scopes the aggregate workspace metrics to that user's own
-    documents."""
+def get_dashboard_metrics(doc_id, user_id=None):
+    """Aggregates metrics for a single document's dashboard. The dashboard
+    is always scoped to the active document — there is no aggregate/
+    workspace-wide mode. When `user_id` is given, the document must belong
+    to that user or zeroed metrics are returned instead of leaking another
+    user's document data (defense-in-depth: callers already only ever
+    reach a doc_id through that user's own document listing, but this
+    guards against a stale/tampered session_state value too)."""
     db = get_db()
 
-    if doc_id:
-        total_clauses = db.clauses.count_documents({"doc_id": doc_id})
-        total_contradictions = db.contradictions.count_documents({"doc_id": doc_id})
-        risky_clauses = db.clauses.count_documents({
-            "doc_id": doc_id,
-            "risk_level": {"$in": ["High", "Medium"]},
-        })
+    doc_query = {"id": doc_id}
+    if user_id is not None:
+        doc_query["user_id"] = user_id
+    if not db.documents.find_one(doc_query, {"_id": 1}):
+        return {
+            "total_documents": 0, "total_clauses": 0, "total_contradictions": 0,
+            "risky_clauses": 0, "risk_distribution": {},
+        }
 
-        pipeline = [
-            {"$match": {"doc_id": doc_id}},
-            {"$group": {"_id": "$risk_level", "count": {"$sum": 1}}},
-        ]
-        risk_dist = {r["_id"]: r["count"] for r in db.clauses.aggregate(pipeline)}
-        total_documents = 1
-    else:
-        doc_query = {"user_id": user_id} if user_id is not None else {}
-        doc_ids = [d["id"] for d in db.documents.find(doc_query, {"id": 1})]
-        clause_query = {"doc_id": {"$in": doc_ids}}
+    total_clauses = db.clauses.count_documents({"doc_id": doc_id})
+    total_contradictions = db.contradictions.count_documents({"doc_id": doc_id})
+    risky_clauses = db.clauses.count_documents({
+        "doc_id": doc_id,
+        "risk_level": {"$in": ["High", "Medium"]},
+    })
 
-        total_documents = len(doc_ids)
-        total_clauses = db.clauses.count_documents(clause_query)
-        total_contradictions = db.contradictions.count_documents({"doc_id": {"$in": doc_ids}})
-        risky_clauses = db.clauses.count_documents({
-            **clause_query,
-            "risk_level": {"$in": ["High", "Medium"]},
-        })
-
-        pipeline = [
-            {"$match": clause_query},
-            {"$group": {"_id": "$risk_level", "count": {"$sum": 1}}},
-        ]
-        risk_dist = {r["_id"]: r["count"] for r in db.clauses.aggregate(pipeline)}
+    pipeline = [
+        {"$match": {"doc_id": doc_id}},
+        {"$group": {"_id": "$risk_level", "count": {"$sum": 1}}},
+    ]
+    risk_dist = {r["_id"]: r["count"] for r in db.clauses.aggregate(pipeline)}
 
     return {
-        "total_documents": total_documents,
+        "total_documents": 1,
         "total_clauses": total_clauses,
         "total_contradictions": total_contradictions,
         "risky_clauses": risky_clauses,

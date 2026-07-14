@@ -64,58 +64,82 @@ st.markdown("""
 
     /* ---------------------------------------------------------------- */
     /* Shared page header banner (utils.theme.render_header)             */
+    /* Deliberately not a filled/bordered card — just a slim row with a  */
+    /* bottom divider, so it reads as a page title, not another box.    */
     /* ---------------------------------------------------------------- */
     .page-header {
         display: flex;
-        align-items: center;
-        gap: 18px;
-        padding: 22px 26px;
-        margin-bottom: 28px;
-        border-radius: 16px;
-        background: linear-gradient(135deg, rgba(99, 110, 250, 0.14) 0%, rgba(99, 110, 250, 0.03) 100%);
-        border: 1px solid rgba(99, 110, 250, 0.25);
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 2px 2px 14px 2px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--lq-border);
+        flex-wrap: wrap;
     }
-    .page-header-icon {
-        flex-shrink: 0;
-        width: 54px;
-        height: 54px;
+    .page-header-left {
         display: flex;
         align-items: center;
-        justify-content: center;
-        font-size: 1.7rem;
-        border-radius: 14px;
-        background: linear-gradient(135deg, var(--lq-accent-dark) 0%, var(--lq-accent-2) 100%);
-        box-shadow: 0 6px 18px rgba(99, 110, 250, 0.35);
+        gap: 12px;
+        min-width: 0;
+    }
+    .page-header-icon-inline {
+        flex-shrink: 0;
+        font-size: 1.5rem;
+        line-height: 1;
     }
     .page-header-text { min-width: 0; }
     .page-header-title-row {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
         flex-wrap: wrap;
     }
     .page-header-title {
         margin: 0 !important;
-        font-size: 1.65rem !important;
-        line-height: 1.2 !important;
+        font-size: 1.3rem !important;
+        line-height: 1.25 !important;
     }
     .page-header-badge {
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: var(--lq-accent);
         background: rgba(99, 110, 250, 0.14);
         border: 1px solid rgba(99, 110, 250, 0.35);
-        padding: 3px 10px;
+        padding: 2px 9px;
         border-radius: 20px;
     }
     .page-header-subtitle {
-        margin: 6px 0 0 0 !important;
-        font-size: 0.98rem;
+        margin: 4px 0 0 0 !important;
+        font-size: 0.86rem;
         color: var(--text-color);
-        opacity: 0.7;
-        max-width: 900px;
+        opacity: 0.65;
+        max-width: 820px;
+    }
+    .page-header-docname {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-color);
+        background: rgba(99, 110, 250, 0.10);
+        border: 1px solid rgba(99, 110, 250, 0.25);
+        padding: 6px 14px;
+        border-radius: 999px;
+        white-space: nowrap;
+        margin-top: 2px;
+    }
+    .page-header-docname-value { color: var(--lq-accent); font-weight: 700; }
+    .page-header-docname-empty {
+        color: var(--text-color);
+        opacity: 0.5;
+        font-weight: 500;
+        background: transparent;
+        border-color: var(--lq-border);
     }
 
     /* Sidebar styling override */
@@ -229,7 +253,7 @@ st.markdown("""
         top: 0;
         z-index: 998;
         padding: 10px 6px;
-        margin: 0.9rem -6px 20px -6px;
+        margin: 1.5rem -6px 20px -6px;
         background: color-mix(in srgb, var(--background-color) 85%, transparent);
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
@@ -457,15 +481,15 @@ st.markdown("""
         box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
     }
 
-    /* Fade-truncated clause preview (~5 lines, gradient fade into the
+    /* Fade-truncated clause preview (~4 lines, gradient fade into the
        card background instead of a hard cutoff). */
     div[class*="st-key-clausepreview_"] p {
         display: -webkit-box;
-        -webkit-line-clamp: 5;
+        -webkit-line-clamp: 4;
         -webkit-box-orient: vertical;
         overflow: hidden;
         position: relative;
-        max-height: 8.2em;
+        max-height: 6.6em;
         line-height: 1.55;
         margin-bottom: 0 !important;
     }
@@ -493,7 +517,7 @@ st.markdown("""
         letter-spacing: 0.01em;
     }
 
-    /* "Explain Risk" bullet list */
+    /* "Why This Clause Is Risky" bullet list */
     .lq-explanation-list {
         margin: 6px 0 14px 0;
         padding-left: 1.3em;
@@ -506,33 +530,44 @@ st.markdown("""
         opacity: 0.9;
     }
 
-    /* Before/After risk comparison (Re-analyze result) */
-    .lq-compare-box {
-        text-align: center;
-        background: var(--secondary-background-color);
-        border: 1px solid var(--lq-border);
-        border-radius: 12px;
-        padding: 14px 10px;
-    }
-    .lq-compare-label {
-        font-size: 0.68rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        opacity: 0.55;
-        margin-bottom: 8px;
-    }
-    .lq-compare-score {
-        font-size: 1.2rem;
-        font-weight: 800;
+    .lq-overview-title {
         font-family: 'Manrope', sans-serif;
-        margin-top: 8px;
+        font-weight: 800;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
         color: var(--text-color);
+        margin-bottom: 14px;
     }
-    .lq-compare-arrow {
-        text-align: center;
-        font-size: 1.6rem;
-        opacity: 0.4;
-        padding-top: 28px;
+    /* "Quick Estimate" trigger card — same footprint/height as the
+       Authenticity metric card next to it, so the top row stays balanced. */
+    div[class*="st-key-quick_estimate_card"] {
+        border-radius: 14px !important;
+        padding: 22px 18px !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 100%;
+    }
+
+    /* "View Full Clause" toggle — a plain text link instead of the app's
+       default gradient CTA button, so it doesn't compete visually with
+       real actions. Fetches text already loaded from the document; no
+       AI call involved. */
+    div[class*="st-key-btn_riskfull_"] .stButton>button {
+        background: transparent !important;
+        color: var(--lq-accent) !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 4px 0 !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        width: auto !important;
+        min-height: unset !important;
+    }
+    div[class*="st-key-btn_riskfull_"] .stButton>button:hover {
+        text-decoration: underline !important;
+        transform: none !important;
+        box-shadow: none !important;
     }
 
     /* Premium visual KPI cards */
@@ -552,11 +587,15 @@ st.markdown("""
         box-shadow: 0 10px 28px rgba(99, 110, 250, 0.18);
     }
     .metric-val, .lq-metric-val {
-        font-size: 2.1rem;
+        font-size: 1.7rem;
         font-weight: 800;
         font-family: 'Manrope', sans-serif;
-        color: var(--lq-accent);
+        color: var(--text-color);
         margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
     }
     .lq-metric-icon {
         font-size: 1.4rem;
@@ -569,6 +608,50 @@ st.markdown("""
         color: var(--text-color);
         opacity: 0.6;
         font-weight: 600;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Clickable dashboard metric cards — a real st.button restyled to   */
+    /* look like .lq-metric-card, not an overlay on separate HTML (an   */
+    /* earlier attempt at overlaying an invisible button on top of a    */
+    /* markdown card fought Streamlit's own Emotion-generated button    */
+    /* sizing and lost even with !important). The button's label is     */
+    /* "icon\n\n**value**\n\nlabel" (Streamlit renders \n\n as line      */
+    /* breaks and **..** as a real <strong>), so `strong` below is      */
+    /* targetable to give the value the same visual weight as           */
+    /* .lq-metric-val.                                                  */
+    /* ---------------------------------------------------------------- */
+    div[class*="st-key-dash_nav_"] .stButton > button {
+        width: 100% !important;
+        height: auto !important;
+        min-height: unset !important;
+        white-space: pre-line !important;
+        text-align: center !important;
+        line-height: 1.4 !important;
+        background: var(--secondary-background-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid rgba(128, 128, 128, 0.18) !important;
+        border-radius: 14px !important;
+        padding: 20px 14px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10) !important;
+        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease !important;
+    }
+    div[class*="st-key-dash_nav_"] .stButton > button:hover {
+        transform: translateY(-4px) !important;
+        border-color: rgba(99, 110, 250, 0.5) !important;
+        box-shadow: 0 10px 28px rgba(99, 110, 250, 0.18) !important;
+    }
+    div[class*="st-key-dash_nav_"] .stButton > button p {
+        font-size: 0.95rem !important;
+        margin: 2px 0 !important;
+        color: var(--text-color) !important;
+    }
+    div[class*="st-key-dash_nav_"] .stButton > button strong {
+        display: block;
+        font-size: 1.9rem;
+        font-family: 'Manrope', sans-serif;
+        font-weight: 800;
+        margin: 2px 0;
     }
 
     /* ---------------------------------------------------------------- */
@@ -590,18 +673,26 @@ st.markdown("""
         box-shadow: 0 8px 24px rgba(99, 110, 250, 0.45) !important;
     }
     div[class*="st-key-lq_chat_panel"] {
-        position: fixed;
+        position: fixed !important;
         bottom: 92px;
         right: 24px;
         z-index: 1000;
         width: 400px;
         max-height: 70vh;
         overflow-y: auto;
-        background: var(--secondary-background-color);
-        border: 1px solid var(--lq-border);
-        border-radius: 18px;
-        padding: 16px;
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+        background: var(--secondary-background-color) !important;
+        opacity: 1 !important;
+        isolation: isolate;
+        border: 1px solid var(--lq-border) !important;
+        border-radius: 18px !important;
+        padding: 16px !important;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+    }
+    /* Streamlit's own generated styles on the inner vertical block can carry
+       a transparent background; without this the panel behind them shows
+       through the fixed, positioned panel above instead of being opaque. */
+    div[class*="st-key-lq_chat_panel"] [data-testid="stVerticalBlock"] {
+        background: var(--secondary-background-color) !important;
     }
     @media (max-width: 500px) {
         div[class*="st-key-lq_chat_panel"] { width: 92vw; right: 4vw; }

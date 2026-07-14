@@ -106,8 +106,13 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
         identified_objects = identify_clauses(full_text, page_mapping)
         identified = [
             {
-                "section_name": obj.clause_type,
+                # Display title: the document's own heading when present,
+                # else a descriptive generated one — never the bare
+                # clause_type, so e.g. six Confidentiality clauses in one
+                # NDA don't all render as identical "Confidentiality" cards.
+                "section_name": obj.clause_title,
                 "text_content": obj.clause_text,
+                # Category: used for grouping/filtering/analytics only.
                 "classification": obj.clause_type,
                 "confidence_score": obj.confidence_score,
                 "page_num": obj.page_number,
@@ -236,31 +241,22 @@ def authenticity_check_node(state: AgentState) -> Dict[str, Any]:
 
 
 def contradiction_detection_node(state: AgentState) -> Dict[str, Any]:
+    """Rule-based only (use_llm=False) — fast, no Groq quota cost, runs on
+    every upload so the dashboard's contradiction count is accurate the
+    moment processing finishes. The deeper AI-verification pass is
+    deliberately deferred to the first time a user opens the Contradiction
+    Detection page (see views/contradiction.py), which then upgrades this
+    same persisted set via crud.replace_contradictions_for_document — so
+    every upload isn't paying for an AI pass the user may never look at."""
     if state.get("error"):
         return {}
     try:
-        contradictions = find_contradictions(state["db_clauses"])
-        saved_contradictions = []
-        clause_ids = [c["id"] for c in state["db_clauses"]]
-        for item in contradictions:
-            id_1 = clause_ids[0] if clause_ids else 0
-            id_2 = clause_ids[1] if len(clause_ids) > 1 else id_1
-            for i, c in enumerate(state["db_clauses"]):
-                for ac in item.affected_clauses:
-                    if (c.get("section_name", "").lower() in ac.lower()
-                            or ac.lower() in c.get("text_content", "").lower()[:200]):
-                        if i == 0 or id_1 == clause_ids[0]:
-                            id_1 = c["id"]
-                        else:
-                            id_2 = c["id"]
-                            break
-
-            c_id = crud.add_contradiction(
-                doc_id=state["doc_id"],
-                clause_id_1=id_1, clause_id_2=id_2,
-                explanation=item.explanation, severity=item.severity,
-            )
-            saved_contradictions.append({"id": c_id, "severity": item.severity})
+        contradictions = find_contradictions(state["db_clauses"], use_llm=False)
+        contradiction_ids = crud.replace_contradictions_for_document(state["doc_id"], contradictions)
+        saved_contradictions = [
+            {"id": c_id, "severity": item.severity}
+            for c_id, item in zip(contradiction_ids, contradictions)
+        ]
         return {"contradictions": saved_contradictions}
     except Exception as e:
         print(f"Error in contradiction detection: {e}")

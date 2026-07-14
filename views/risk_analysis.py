@@ -7,39 +7,109 @@ import streamlit as st
 from database import crud
 from utils.theme import render_header, render_metric_card, render_mini_card, render_badge
 from agents.importance_agent import assess_clause_importance
-from agents.risk_scoring_agent import generate_risk_mitigation, generate_improved_clause
 from agents.rule_engine import detect_clause_type
 
 RISK_COLORS = {"High": "#EF553B", "Medium": "#FECB52", "Low": "#636EFA", "None": "#00CC96", "Critical": "#EF553B"}
-
-# Presentation-only keyword vocabulary for the "Risk Factors" chips — derived
-# from the clause's existing category/explanation/text via simple keyword
-# matching. No new agent calls, no persistence; purely a scannable summary
-# of data the backend already produced.
-RISK_FACTOR_VOCAB = [
-    ("Vague Language", ["vague", "unclear", "undefined", "not clearly defined", "loosely defined"]),
-    ("Missing Timeline", ["no timeline", "no deadline", "notice period", "no specified period",
-                           "timeframe is not specified", "no cure period"]),
-    ("Legal Ambiguity", ["ambiguous", "ambiguity", "open to interpretation", "subject to interpretation"]),
-    ("Penalty Missing", ["no penalty", "lacks penalty", "without penalty", "no liquidated damages",
-                          "penalty is not specified"]),
-    ("Uncapped Liability", ["unlimited liability", "uncapped", "unlimited exposure", "no cap on"]),
-    ("Unilateral Rights", ["sole discretion", "unilateral", "one-sided", "at its discretion", "without consent"]),
-    ("Indemnity Gap", ["indemnification", "indemnify", "indemnity"]),
-    ("Compliance Risk", ["compliance", "regulatory", "statutory", "non-compliant", "gdpr"]),
-    ("Termination Risk", ["termination", "terminate"]),
-    ("Assignment Risk", ["assignment", "assign its rights", "assign this agreement"]),
-    ("Governing Law Gap", ["governing law", "jurisdiction is not specified", "no governing law"]),
-]
-CHIP_PALETTE = ["#EF553B", "#FECB52", "#636EFA", "#00CC96", "#AB63FA", "#FFA15A"]
 
 HIGHLIGHT_WORDS = [
     "vague", "unclear", "ambiguous", "ambiguity", "undefined", "missing",
     "unlimited", "uncapped", "penalt", "indemnif", "liability",
     "sole discretion", "unilateral", "without notice", "non-compliant",
     "breach", "dispute", "terminate", "termination",
+    "one-sided", "no upper limit", "no limit", "not clearly stated", "lack of clarity",
 ]
 _HIGHLIGHT_RE = re.compile("(" + "|".join(re.escape(w) for w in HIGHLIGHT_WORDS) + ")", re.IGNORECASE)
+
+# Rule-based jargon → plain-English swaps applied to clause explanations
+# before display, so "Why is this risky" reads in simple English without an
+# extra LLM call. Longest keys first so multi-word phrases match before
+# their single-word substrings (e.g. "sole discretion" before "discretion").
+SIMPLIFY_MAP = {
+    "indemnification": "compensation for losses",
+    "indemnify": "compensate for losses",
+    "indemnity": "compensation for losses",
+    "unilaterally": "one-sided",
+    "unilateral": "one-sided",
+    "sole discretion": "its own judgment, without asking you",
+    "ambiguous": "unclear",
+    "ambiguity": "lack of clarity",
+    "undefined": "not clearly stated",
+    "liquidated damages": "a pre-agreed penalty amount",
+    "governing law": "which state's or country's laws apply",
+    "jurisdiction": "which court has authority",
+    "force majeure": "unforeseeable events beyond anyone's control",
+    "cure period": "time allowed to fix the problem",
+    "statutory": "required by law",
+    "non-compliant": "not following the rules",
+    "unlimited liability": "no limit on what you could owe",
+    "uncapped": "with no upper limit",
+    "notwithstanding": "despite",
+    "herein": "in this document",
+    "thereof": "of it",
+}
+_SIMPLIFY_RE = re.compile(
+    "(" + "|".join(re.escape(k) for k in sorted(SIMPLIFY_MAP, key=len, reverse=True)) + ")",
+    re.IGNORECASE,
+)
+
+# The rule-based analyzer (agents/analyzer_agent.py) writes explanations as
+# "Classified as 'X' (Y risk category). Risk score 72/100: 'without notice'
+# +15; base tier 'Medium' = 55." — a scoring readout, not a risk narrative.
+# This pulls out the risk category and the flagged phrases and drops the
+# arithmetic (and any mitigating, negative-point phrases) entirely.
+_SCORE_EXPLANATION_RE = re.compile(
+    r"^Classified as '(?P<clause_type>[^']*)'\s*\((?P<risk_category>[^)]*) risk category\)\.\s*"
+    r"Risk score \d+/100:\s*(?P<contributions>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_CONTRIBUTION_RE = re.compile(r"^'([^']+)'\s*([+-]\d+)$")
+
+# One-line grounding for *why* a risk category matters, shown before the
+# specific flagged phrases so a single phrase match still reads as a full
+# explanation rather than an isolated word.
+CATEGORY_CONTEXT = {
+    "Financial": "This clause carries financial risk — it can directly affect what you pay, owe, or recover if something goes wrong.",
+    "Legal": "This clause carries legal risk — it can affect your legal standing, obligations, or ability to enforce your rights.",
+    "Compliance": "This clause carries compliance risk — failing to meet its requirements could expose you to regulatory or contractual consequences.",
+    "Operational": "This clause carries operational risk — it can disrupt how the agreement is carried out in practice.",
+}
+
+# Plain-English reason each risk-increasing phrase actually matters — not
+# just that it was "found", but what it does to your exposure. Covers every
+# escalating (positive-point) phrase in rules/risk_rules.json and
+# rules/escalation_rules.json.
+PHRASE_EXPLANATIONS = {
+    "without notice": "it lets the other party act (e.g. terminate or change terms) without warning you first, leaving you no time to prepare or respond",
+    "sole discretion": "the decision is left entirely to the other party's own judgment, with no requirement to consult you or explain it",
+    "immediate termination": "the agreement can end right away, with no transition period to wind down obligations or find an alternative",
+    "immediately": "an obligation or consequence takes effect right away, with no buffer time to comply or react",
+    "no cure period": "there's no window to fix a mistake or missed obligation before consequences like termination kick in",
+    "at any time": "the other party can exercise this right whenever it wants, with no defined trigger or advance planning for you",
+    "for convenience": "the agreement can be ended for no stated reason at all, not just for a breach — no cause is required",
+    "irrevocable": "once given, it cannot be taken back or changed later, even if circumstances change",
+    "unlimited liability": "there is no cap on how much you could be required to pay if something goes wrong",
+    "unlimited": "there is no cap on the exposure this clause creates",
+    "uncapped": "no maximum limit is set on the financial exposure this clause creates",
+    "no limitation": "the clause explicitly rules out any cap on liability or obligation",
+    "without limitation": "this signals the surrounding obligation has no cap or boundary",
+    "consequential damages": "you could be liable for indirect losses (like lost profits) on top of direct damages, which can be large and hard to predict",
+    "punitive damages": "you could be liable for damages meant to punish, not just compensate — these can far exceed actual losses",
+    "joint and several": "each party can be held responsible for the entire obligation, not just its own share, if another party can't pay",
+    "non-refundable": "money already paid will not be returned, even if circumstances change or the agreement ends early",
+    "penalty": "a monetary penalty applies, adding cost on top of the underlying obligation",
+    "liquidated damages": "a pre-agreed penalty amount applies automatically if there's a breach, regardless of your actual loss",
+    "late fee": "falling behind on a deadline (usually payment) triggers an extra charge",
+    "interest": "outstanding amounts accrue interest, which increases what you owe the longer it stays unpaid",
+    "immediate payment": "payment is due right away, leaving no time to arrange funds",
+    "acceleration": "missing one payment or obligation can trigger the entire remaining balance to become due at once",
+    "no offset": "you can't reduce what you owe by amounts the other party separately owes you",
+    "forfeit": "you could lose money, property, or rights already paid for or earned, without compensation",
+    "hold harmless": "you may be required to cover the other party's losses, even for issues you didn't directly cause",
+    "unlimited indemnification": "there is no cap on how much you could owe to cover the other party's losses or claims",
+    "defend": "you may be required to pay for and manage the legal defense of claims brought against the other party",
+    "third-party claims": "you could be responsible for claims brought by people or companies outside this agreement",
+    "sole negligence": "you may owe compensation even for harm caused solely by the other party's own carelessness",
+}
 
 
 def _fmt(value, default="—"):
@@ -48,17 +118,12 @@ def _fmt(value, default="—"):
     return value
 
 
-def _clause_risk_factors(category, explanation, text, limit=5):
-    haystack = f"{explanation or ''} {text or ''}".lower()
-    chips = []
-    if category:
-        chips.append(category)
-    for label, keywords in RISK_FACTOR_VOCAB:
-        if len(chips) >= limit:
-            break
-        if label not in chips and any(kw in haystack for kw in keywords):
-            chips.append(label)
-    return chips[:limit]
+def _simplify(text):
+    """Rule-based plain-English pass over explanatory text — swaps common
+    legal/technical jargon for everyday phrasing. No LLM call."""
+    if not text:
+        return text
+    return _SIMPLIFY_RE.sub(lambda m: SIMPLIFY_MAP[m.group(0).lower()], text)
 
 
 def _bulletize(explanation):
@@ -74,6 +139,43 @@ def _bulletize(explanation):
     return [p.strip() for p in parts if len(p.strip()) > 3][:6]
 
 
+def _risk_explanation_bullets(explanation):
+    """Plain-English bullets describing *why* a clause is risky — never the
+    point arithmetic behind its score. Rule-based explanations get a leading
+    "why this category matters" sentence plus one bullet per risk-increasing
+    phrase actually found (mitigating, negative-point phrases are dropped —
+    they're reasons the clause is *less* risky, not why it was flagged);
+    anything else falls back to simple sentence-splitting."""
+    if not explanation:
+        return []
+    text = explanation.strip()
+    match = _SCORE_EXPLANATION_RE.match(text)
+    if not match:
+        return [_simplify(b) for b in _bulletize(text)]
+
+    risk_category = match.group("risk_category").strip()
+    bullets = [CATEGORY_CONTEXT.get(
+        risk_category, "This clause was flagged for elevated risk based on its specific wording."
+    )]
+
+    for part in match.group("contributions").split(";"):
+        part = part.strip().rstrip(".")
+        if not part or part.lower().startswith("base tier"):
+            continue
+        contribution_match = _CONTRIBUTION_RE.match(part)
+        if not contribution_match:
+            continue
+        phrase, points = contribution_match.group(1), int(contribution_match.group(2))
+        if points <= 0:
+            continue  # mitigating language — not a reason this clause is risky
+        reason = PHRASE_EXPLANATIONS.get(phrase.lower())
+        if reason:
+            bullets.append(f'Uses the phrase "{phrase}" — {reason}.')
+        else:
+            bullets.append(f'Uses the phrase "{phrase}", which raises risk.')
+    return bullets[:6]
+
+
 def _highlight(text):
     """Escapes the text then bolds known risk-trigger keywords — safe to
     render with unsafe_allow_html since escaping happens first."""
@@ -84,13 +186,13 @@ def _highlight(text):
 
 
 def render_toggle(flag_key: str, button_key: str, label: str) -> bool:
-    """Compact lazy-load toggle row (mirrors pages/clause_analysis.py) —
-    a plain button + session_state flag instead of st.expander, so the
-    body below only executes once opened."""
+    """Plain text-link toggle (not a boxed CTA button) — swaps its own label
+    between "<label>" and "Hide <label>" instead of using an arrow icon, so
+    it reads as an inline link. Body below only executes once opened."""
     if flag_key not in st.session_state:
         st.session_state[flag_key] = False
-    arrow = "▼" if st.session_state[flag_key] else "▶"
-    if st.button(f"{arrow}  {label}", key=button_key, width="stretch"):
+    shown_label = f"Hide {label}" if st.session_state[flag_key] else label
+    if st.button(shown_label, key=button_key):
         st.session_state[flag_key] = not st.session_state[flag_key]
         st.rerun()
     return st.session_state[flag_key]
@@ -120,145 +222,117 @@ def _compute_display_intel(clauses_json: str) -> dict:
 
 
 def render():
+    doc_id = st.session_state.active_doc_id
+    doc_name = st.session_state.active_doc_name
+
     render_header(
         "⚠️",
         "Risk Analysis & Mitigation Advisor",
-        "Score document-wide risk; Explain Risk and Simplify Risk turn every flagged clause into a "
-        "plain-English breakdown with an AI-backed mitigation strategy.",
-        badge="Agent 4"
+        "A plain-English breakdown of document-wide risk and authenticity, plus every flagged clause explained.",
+        badge="Agent 4",
+        doc_name=doc_name,
     )
-
-    doc_id = st.session_state.active_doc_id
-    doc_name = st.session_state.active_doc_name
 
     if not doc_id:
         st.warning("⚠️ Please select an active document in the sidebar to review risks.")
         return
 
-    st.info(f"Auditing Risks for: **{doc_name}**")
-
     clauses = crud.get_clauses_for_document(doc_id)
+    active_doc = crud.get_document_by_id(doc_id) or {}
 
-    # Popped (read + cleared) so it only renders once, right after the
-    # rerun triggered below — the LLM path updates per-clause risk in
-    # Mongo, so a rerun is needed for the risky-clauses list further down
-    # (already fetched into `clauses` above) to reflect the new scores.
-    doc_risk_result = st.session_state.pop("document_risk_result", None)
-
-    active_doc = crud.get_document_by_id(doc_id)
+    # One-time upgrade for documents ingested before clause_title generation
+    # existed: their section_name is still the bare category (e.g. every
+    # Payment clause literally titled "Payment"). Cheap and rule-based, so it
+    # runs silently the first time this document is viewed after the fix —
+    # shared with views/clause_analysis.py via the same document-level flag.
+    if clauses and not active_doc.get("clause_titles_backfilled"):
+        from agents.clause_identifier_agent import backfill_clause_titles_for_document
+        if backfill_clause_titles_for_document(doc_id):
+            clauses = crud.get_clauses_for_document(doc_id)
+        crud.update_document_analysis(doc_id, clause_titles_backfilled=True)
 
     # ---------------------------------------------------------
-    # OVERVIEW ROW — authenticity + document risk trigger side by side,
-    # so both fit above the fold before the flagged-clause list.
+    # OVERVIEW — just two things up top: the authenticity score, and a
+    # Quick Estimate trigger. The gauge + recommendations only appear once
+    # the button is clicked (persisted per-document in session_state so
+    # picking a filter below doesn't make it vanish again).
     # ---------------------------------------------------------
-    top_cols = st.columns(2)
-    with top_cols[0]:
-        with st.container(border=True):
-            st.markdown("##### 🔍 Authenticity Report")
-            if not active_doc or active_doc.get("authenticity_score") is None:
-                st.caption("Not yet analyzed. Re-run analysis on this document to generate an authenticity report.")
-            else:
-                score = active_doc["authenticity_score"]
-                level = active_doc.get("authenticity_level", "Unknown")
-                level_color = "#00CC96" if level == "Authentic" else "#FECB52" if level == "Suspicious" else "#EF553B"
+    with st.container(key="risk_overview_card"):
+        st.markdown('<div class="lq-overview-title">📊 Risk &amp; Authenticity Overview</div>', unsafe_allow_html=True)
+
+        a_score = active_doc.get("authenticity_score")
+        a_level = active_doc.get("authenticity_level", "Unknown")
+        a_color = "#00CC96" if a_level == "Authentic" else "#FECB52" if a_level == "Suspicious" else "#EF553B"
+
+        stat_cols = st.columns(2)
+        with stat_cols[0]:
+            st.markdown(
+                render_metric_card("Authenticity Score", f"{a_score}/100" if a_score is not None else "—", "🔍", accent=a_color),
+                unsafe_allow_html=True,
+            )
+            if a_score is not None:
+                st.markdown(f"<div style='text-align:center; margin-top:6px;'>{render_badge(a_level.upper(), a_color)}</div>", unsafe_allow_html=True)
+        with stat_cols[1]:
+            with st.container(border=True, key="quick_estimate_card"):
                 st.markdown(
-                    f"**{score}/100** &nbsp; "
-                    f"<span style='color:{level_color}; font-weight:700;'>{level.upper()}</span>",
+                    "<div style='text-align:center; opacity:0.65; font-size:0.72rem; text-transform:uppercase; "
+                    "letter-spacing:0.06em; font-weight:700; margin-bottom:10px;'>📊 Document Risk</div>",
                     unsafe_allow_html=True,
                 )
-                st.caption(
-                    "Whether the document looks like a genuine, complete legal instrument — "
-                    "independent of how risky its clause content is."
-                )
+                run_quick = st.button("⚡ Quick Estimate", key="quick_estimate_btn", width="stretch", type="primary")
+                st.caption("Rule-based score across every clause — instant, no LLM call.")
 
-    with top_cols[1]:
-        with st.container(border=True):
-            st.markdown("##### 📊 Document Risk Score")
-            btn_cols = st.columns(2)
-            run_llm = btn_cols[0].button("🤖 Full AI Re-score", type="primary", width="stretch")
-            run_quick = btn_cols[1].button("⚡ Quick Estimate", width="stretch")
-            st.caption("Full AI Re-score calls Groq once per clause (Agent 4). Quick Estimate is instant, rule-based.")
+        quick_estimate_key = f"quick_estimate_{doc_id}"
+        if run_quick:
+            with st.spinner("Computing a fresh rule-based estimate…"):
+                try:
+                    from agents.risk_scoring_agent import assess_document_risk
+                    st.session_state[quick_estimate_key] = assess_document_risk(doc_name, clauses)
+                except Exception as e:
+                    st.error(f"Failed to generate document risk score: {e}")
 
-    if run_llm or run_quick:
-        spinner_msg = (
-            "Agent 4 is asking Groq to re-assess every clause and recomputing the document score "
-            "(this calls the LLM once per clause, so larger documents take longer)..."
-            if run_llm else
-            "Agent 4 is computing a fast rule-based estimate..."
-        )
-        with st.spinner(spinner_msg):
-            try:
-                from agents.risk_scoring_agent import assess_document_risk, assess_document_risk_with_llm
-
-                if run_llm:
-                    risk_result = assess_document_risk_with_llm(doc_name, clauses)
-                    # The LLM path just overwrote per-clause risk fields in Mongo —
-                    # stash the result and rerun so the risky-clauses list below
-                    # (already fetched into `clauses` before this ran) picks up
-                    # the new scores instead of showing stale badges.
-                    st.session_state.document_risk_result = {"result": risk_result, "method": "llm"}
-                    st.rerun()
-                else:
-                    risk_result = assess_document_risk(doc_name, clauses)
-                    doc_risk_result = {"result": risk_result, "method": "rule"}
-
-            except Exception as e:
-                st.error(f"Failed to generate document risk score: {e}")
-                doc_risk_result = None
-
-    if doc_risk_result:
-        risk_result = doc_risk_result["result"]
-        from utils.visualizer import generate_risk_gauge_chart
-
-        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-        with st.container(border=True):
-            method_caption = (
-                "🤖 Scored via Groq LLM re-analysis of every clause — per-clause risk scores were updated too."
-                if doc_risk_result["method"] == "llm"
-                else "⚡ Scored via the fast rule-based phrase scan (no LLM call)."
-            )
-
+        risk_result = st.session_state.get(quick_estimate_key)
+        if risk_result:
+            st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
             gauge_col, detail_col = st.columns([1, 1.4])
             with gauge_col:
-                gauge_fig = generate_risk_gauge_chart(risk_result.risk_score)
-                st.plotly_chart(gauge_fig, use_container_width=True)
+                from utils.visualizer import generate_risk_gauge_chart
+                st.plotly_chart(generate_risk_gauge_chart(risk_result.risk_score), use_container_width=True)
             with detail_col:
-                level_badge = render_badge(
-                    risk_result.risk_level.upper(), RISK_COLORS.get(risk_result.risk_level, "#888888")
-                )
+                level_badge = render_badge(risk_result.risk_level.upper(), RISK_COLORS.get(risk_result.risk_level, "#888888"))
                 st.markdown(f"**Risk Level:** {level_badge}", unsafe_allow_html=True)
-                st.caption(method_caption)
+                st.markdown("**Recommendations**")
+                st.write(risk_result.recommendations)
 
-                with st.expander("🧠 Agent Reasoning", expanded=False):
-                    st.write(risk_result.reasoning)
-                with st.expander("💡 Key Recommendations", expanded=False):
-                    st.write(risk_result.recommendations)
-
-                if risk_result.affected_clauses:
-                    st.markdown("**Flagged Sections**")
-                    chips_html = "".join(
-                        f'<span class="lq-risk-chip" style="background:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}22; '
-                        f'color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}; border-color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}55;">'
-                        f'{html.escape(ac)}</span>'
-                        for i, ac in enumerate(risk_result.affected_clauses)
-                    )
-                    st.markdown(chips_html, unsafe_allow_html=True)
-
-    st.divider()
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
     # FLAGGED CLAUSES
     # ---------------------------------------------------------
-    # A clause that was just re-analyzed down to Low risk still needs to
-    # stay visible so its Before/After comparison can render — otherwise
-    # the risk-level filter below would make it disappear the instant it
-    # improves, hiding the very result the user just asked for.
-    reanalyzed_ids = {c["id"] for c in clauses if f"reanalysis_{c['id']}" in st.session_state}
-    risky_clauses = [c for c in clauses if c["risk_level"] in ("High", "Medium") or c["id"] in reanalyzed_ids]
+    risky_clauses_all = [c for c in clauses if c["risk_level"] in ("High", "Medium")]
 
-    if not risky_clauses:
+    if not risky_clauses_all:
         st.success("✅ Excellent! No High or Medium risk clauses were detected in this agreement.")
         return
+
+    categories = sorted({c.get("risk_category") or "Uncategorized" for c in risky_clauses_all})
+    filter_cols = st.columns(2)
+    with filter_cols[0]:
+        selected_category = st.selectbox("🏷 Category", ["All Categories"] + categories, key="risk_category_filter")
+    with filter_cols[1]:
+        selected_level = st.selectbox("⚠ Risk Level", ["All Levels", "High", "Medium"], key="risk_level_filter")
+
+    risky_clauses = risky_clauses_all
+    if selected_category != "All Categories":
+        risky_clauses = [c for c in risky_clauses if (c.get("risk_category") or "Uncategorized") == selected_category]
+    if selected_level != "All Levels":
+        risky_clauses = [c for c in risky_clauses if c["risk_level"] == selected_level]
+
+    if not risky_clauses:
+        st.info("No flagged clauses match the selected filters.")
+        return
+
+    st.divider()
 
     high_count = sum(1 for c in risky_clauses if c["risk_level"] == "High")
     med_count = sum(1 for c in risky_clauses if c["risk_level"] == "Medium")
@@ -279,7 +353,7 @@ def render():
     ]
     intel_by_clause = _compute_display_intel(json.dumps(serializable))
 
-    PREVIEW_CHARS = 320
+    PREVIEW_CHARS = 260
     for c in risky_clauses:
         cid = c["id"]
         risk_level = c["risk_level"]
@@ -306,161 +380,36 @@ def render():
                 badge_html = render_badge(f"{risk_level.upper()} RISK", border_color)
                 st.markdown(f"<div style='text-align:right; padding-top:14px;'>{badge_html}</div>", unsafe_allow_html=True)
 
-            mini_cols = st.columns(5)
-            page_val = c.get("page_num")
+            mini_cols = st.columns(3)
             with mini_cols[0]:
                 st.markdown(render_mini_card("Category", _fmt(c.get("risk_category")), "🏷"), unsafe_allow_html=True)
             with mini_cols[1]:
-                st.markdown(render_mini_card("Page", f"Page {page_val}" if page_val else "N/A", "📄"), unsafe_allow_html=True)
-            with mini_cols[2]:
                 st.markdown(render_mini_card("Importance", importance_category, "📈"), unsafe_allow_html=True)
-            with mini_cols[3]:
+            with mini_cols[2]:
                 st.markdown(render_mini_card("Confidence", confidence_display, "🎯"), unsafe_allow_html=True)
-            with mini_cols[4]:
-                st.markdown(render_mini_card("Characters", f"{len(full_text):,}", "🔤"), unsafe_allow_html=True)
 
             st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
-            # ── Clause preview (fade-truncated ~5 lines) ────────────
+            # ── Clause preview (fade-truncated ~4 lines) ────────────
             with st.container(key=f"clausepreview_{cid}"):
                 st.write(full_text or "No text extracted for this clause.")
 
             if is_long:
+                # Plain text link, not an AI call — just reveals the clause
+                # text already fetched from the document.
                 if render_toggle(f"clause_{cid}_full_expanded", f"btn_riskfull_{cid}", "View Full Clause"):
                     with st.container(border=True):
                         st.write(full_text)
 
             st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
-            # ── Explain Risk ─────────────────────────────────────────
-            st.markdown("##### 🧠 Explain Risk — why was this clause flagged?")
-            bullets = _bulletize(c.get("explanation"))
+            # ── Why this clause is risky, in plain English ──────────
+            st.markdown("##### 🧠 Why This Clause Is Risky")
+            bullets = _risk_explanation_bullets(c.get("explanation"))
             if bullets:
                 bullets_html = "".join(f"<li>{_highlight(b)}</li>" for b in bullets)
                 st.markdown(f'<ul class="lq-explanation-list">{bullets_html}</ul>', unsafe_allow_html=True)
             else:
                 st.caption("No explanation recorded for this clause yet.")
-
-            factors = _clause_risk_factors(c.get("risk_category"), c.get("explanation"), full_text)
-            if factors:
-                st.markdown("**Risk Factors**")
-                chips_html = "".join(
-                    f'<span class="lq-risk-chip" style="background:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}22; '
-                    f'color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}; border-color:{CHIP_PALETTE[i % len(CHIP_PALETTE)]}55;">'
-                    f'{html.escape(str(f))}</span>'
-                    for i, f in enumerate(factors)
-                )
-                st.markdown(chips_html, unsafe_allow_html=True)
-
-            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-
-            # ── Simplify Risk (why risky / legal impact / business
-            # impact / consequences / mitigation / AI recommendation) ──
-            mitigation_key = f"mitigation_result_{cid}"
-            improved_key = f"improved_clause_{cid}"
-            if render_toggle(f"clause_{cid}_mitigation_expanded", f"btn_mitigate_toggle_{cid}", "Simplify Risk"):
-                with st.container(border=True):
-                    if mitigation_key not in st.session_state:
-                        st.caption(
-                            "Generate a plain-English risk breakdown: why it's risky, legal and business "
-                            "impact, likely consequences, suggested mitigation, and an AI recommendation."
-                        )
-                        if st.button("💡 Simplify Risk", key=f"mitigate_{cid}", type="primary"):
-                            with st.spinner("💡 Generating AI risk breakdown..."):
-                                try:
-                                    response = generate_risk_mitigation(
-                                        c["section_name"], full_text, risk_level,
-                                        c["risk_category"], c.get("explanation"),
-                                    )
-                                    st.session_state[mitigation_key] = response
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Failed to generate risk breakdown: {e}")
-                    else:
-                        st.markdown("###### ✅ Simplify Risk — AI Breakdown")
-                        st.markdown(st.session_state[mitigation_key])
-
-                        action_cols = st.columns(2)
-                        if action_cols[0].button("🔄 Regenerate", key=f"mitigate_regen_{cid}", width="stretch"):
-                            del st.session_state[mitigation_key]
-                            st.session_state.pop(improved_key, None)
-                            st.rerun()
-                        if action_cols[1].button("📝 Generate Improved Clause", key=f"improve_{cid}", width="stretch"):
-                            with st.spinner("Drafting improved clause wording..."):
-                                try:
-                                    improved = generate_improved_clause(full_text, st.session_state[mitigation_key])
-                                    st.session_state[improved_key] = improved
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Failed to generate improved clause: {e}")
-
-                        if st.session_state.get(improved_key):
-                            st.markdown("###### 📝 Improved Clause")
-                            st.info(st.session_state[improved_key])
-
-            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-
-            # ── Re-analyze Risk with AI ──────────────────────────────
-            reanalysis_key = f"reanalysis_{cid}"
-            if render_toggle(f"clause_{cid}_reanalyze_expanded", f"btn_reanalyze_toggle_{cid}", "Re-analyze Risk"):
-                with st.container(border=True):
-                    st.markdown("###### 🔄 Re-analyze Risk")
-                    st.caption("Validate the clause after applying AI recommendations — re-scores it with a fresh LLM legal assessment.")
-
-                    if st.button("Re-analyze with AI", key=f"llm_risk_{cid}", type="primary"):
-                        with st.spinner("🔄 Requesting an LLM risk re-assessment for this clause..."):
-                            try:
-                                from agents.analyzer_agent import analyze_clause_risk_with_llm
-                                before_level = risk_level
-                                before_score = c.get("risk_score") if c.get("risk_score") is not None else 0
-                                llm_result = analyze_clause_risk_with_llm(c["section_name"], full_text)
-                                crud.update_clause_risk(
-                                    clause_id=cid,
-                                    risk_level=llm_result.risk_level,
-                                    risk_category=llm_result.risk_category,
-                                    risk_score=llm_result.risk_score,
-                                    explanation=llm_result.explanation,
-                                )
-                                st.session_state[reanalysis_key] = {
-                                    "before_level": before_level,
-                                    "before_score": before_score,
-                                    "after_level": llm_result.risk_level,
-                                    "after_score": llm_result.risk_score,
-                                }
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"LLM risk re-analysis failed: {e}")
-
-                    if reanalysis_key in st.session_state:
-                        r = st.session_state[reanalysis_key]
-                        reduction = r["before_score"] - r["after_score"]
-                        pct = round((reduction / r["before_score"]) * 100) if r["before_score"] else 0
-
-                        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-                        cmp_cols = st.columns([1, 0.3, 1])
-                        with cmp_cols[0]:
-                            st.markdown(
-                                f'<div class="lq-compare-box"><div class="lq-compare-label">BEFORE</div>'
-                                f'{render_badge(r["before_level"].upper(), RISK_COLORS.get(r["before_level"], "#888888"))}'
-                                f'<div class="lq-compare-score">{r["before_score"]}/100</div></div>',
-                                unsafe_allow_html=True,
-                            )
-                        with cmp_cols[1]:
-                            st.markdown('<div class="lq-compare-arrow">→</div>', unsafe_allow_html=True)
-                        with cmp_cols[2]:
-                            st.markdown(
-                                f'<div class="lq-compare-box"><div class="lq-compare-label">AFTER</div>'
-                                f'{render_badge(r["after_level"].upper(), RISK_COLORS.get(r["after_level"], "#888888"))}'
-                                f'<div class="lq-compare-score">{r["after_score"]}/100</div></div>',
-                                unsafe_allow_html=True,
-                            )
-
-                        st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
-                        if reduction > 0:
-                            st.success(f"✅ Risk reduced by {pct}% ({reduction} points)")
-                        elif reduction < 0:
-                            st.warning(f"⚠️ Risk increased by {abs(pct)}% ({abs(reduction)} points)")
-                        else:
-                            st.caption("No change in risk score.")
 
         st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)

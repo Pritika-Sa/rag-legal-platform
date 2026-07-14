@@ -21,38 +21,50 @@ def _chart_colors():
     return _CHART_COLORS["light"] if is_light_theme() else _CHART_COLORS["dark"]
 
 
-def generate_risk_pie_chart(risk_dist):
-    """Generates a Plotly Pie Chart for risk level distribution."""
-    # Ensure risk_dist is formatted nicely
-    data = {"Risk Level": [], "Count": []}
-    for level in ["High", "Medium", "Low", "None"]:
-        data["Risk Level"].append(level)
-        data["Count"].append(risk_dist.get(level, 0))
-        
-    colors = {
-        "High": "#EF553B",    # Sleek Red
-        "Medium": "#FECB52",  # Sleek Amber
-        "Low": "#636EFA",     # Sleek Blue
-        "None": "#00CC96"     # Sleek Green
-    }
-    
-    fig = px.pie(
-        data_frame=data,
-        names="Risk Level",
-        values="Count",
-        color="Risk Level",
-        color_discrete_map=colors,
-        hole=0.4,
-        title="Clause Risk Level Distribution"
-    )
-    
+def generate_risk_radar_chart(risk_dist):
+    """Generates a Plotly Radar Chart for risk level distribution, replacing
+    the old pie chart. Each axis is a risk level (High/Medium/Low/None);
+    the radius is that level's share of total clauses (0-100%), matching
+    the 0-100 scale convention of the other radar charts in this file."""
+    levels = ["High", "Medium", "Low", "None"]
+    total = sum(risk_dist.get(level, 0) for level in levels)
+    values = [round(100 * risk_dist.get(level, 0) / total) if total else 0 for level in levels]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=values + [values[0]],  # close the loop
+        theta=levels + [levels[0]],
+        fill='toself',
+        fillcolor='rgba(99, 110, 250, 0.5)',
+        line=dict(color='#636EFA', width=3),
+        name='Risk Distribution'
+    ))
+
     chart_colors = _chart_colors()
     fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                ticksuffix="%",
+                tickcolor=chart_colors["grid"],
+                gridcolor=chart_colors["grid"],
+                tickfont=dict(color=chart_colors["muted"])
+            ),
+            angularaxis=dict(
+                gridcolor=chart_colors["grid"],
+                tickfont=dict(color=chart_colors["text"], size=14)
+            ),
+            bgcolor='rgba(0,0,0,0)'
+        ),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font_color=chart_colors["text"],
+        font={'color': chart_colors["text"]},
+        title="Clause Risk Level Distribution",
         title_font_size=18,
-        margin=dict(t=40, b=10, l=10, r=10)
+        showlegend=False,
+        margin=dict(t=40, b=40, l=40, r=40),
+        height=400
     )
     return fig
 
@@ -90,7 +102,7 @@ def generate_category_bar_chart(clauses):
         color="Risk Level",
         color_discrete_map=colors,
         title="Risk Severity by Clause Category",
-        barmode="stack"
+        barmode="group"
     )
     
     chart_colors = _chart_colors()

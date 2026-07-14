@@ -123,6 +123,10 @@ _OBLIGATION_RE = re.compile(
     r"\b([A-Z][A-Za-z&,.]{2,40})\s+(shall(?:\s+not)?|must(?:\s+not)?|will(?:\s+not)?|agrees to)\s+([^.\n]{3,80})"
 )
 
+_CLAUSE_NUMBER_RE = re.compile(r"\b(?:Section|Clause|Article|Paragraph)\s+(\d+(?:\.\d+)*)\b", re.IGNORECASE)
+_LEADING_NUMBER_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)\s*[\.\):]?\s*")
+_TITLE_PREFIX_RE = re.compile(r"^(section|clause|article|paragraph)\s+\d+(?:\.\d+)*\s*[\.:\)]?\s*", re.IGNORECASE)
+
 
 def extract_money(text: str) -> List[str]:
     return _MONEY_RE.findall(text)
@@ -147,6 +151,152 @@ def extract_section_refs(text: str) -> List[str]:
 def extract_obligations(text: str) -> List[Tuple[str, str, str]]:
     """Returns (source, relation, target) triples for 'X shall/must/will Y' phrasing."""
     return [(m[0].strip(), m[1].strip(), m[2].strip()) for m in _OBLIGATION_RE.findall(text)]
+
+
+def extract_clause_number(section_name: str, text: str) -> str | None:
+    """Pulls a clause/section number from a heading ('Section 4.2 ...') or,
+    failing that, a leading number on the heading itself ('4.2 Termination').
+    Shared by contradiction_agent (duplicate grouping) and comparison_agent
+    (preferred clause-to-clause matching) so both agents agree on what counts
+    as 'the same numbered clause'."""
+    m = _CLAUSE_NUMBER_RE.search(section_name or "") or _CLAUSE_NUMBER_RE.search((text or "")[:200])
+    if m:
+        return m.group(1)
+    m2 = _LEADING_NUMBER_RE.match(section_name or "")
+    if m2 and m2.group(1):
+        return m2.group(1)
+    return None
+
+
+def normalize_clause_title(section_name: str) -> str:
+    """Strips leading 'Section 4.2' / numbering prefixes from a heading so
+    'Section 4.2 Termination' and '4.2 Termination' both normalize to
+    'termination' for title-based matching."""
+    t = _TITLE_PREFIX_RE.sub("", (section_name or "").strip())
+    t = _LEADING_NUMBER_RE.sub("", t)
+    return t.strip().lower()
+
+
+# ── Clause title generation ─────────────────────────────────────────────────
+# The clause TYPE (e.g. "Confidentiality") is a category for grouping/
+# filtering/analytics — it is never a good display title, since a single NDA
+# routinely has half a dozen Confidentiality clauses that all need distinct
+# names. This gives every clause a specific, descriptive title even when the
+# source document has no usable heading of its own, without an LLM call (this
+# runs on every clause at ingestion time).
+
+# (trigger keywords, title) pairs per clause type, checked in order — most
+# specific subtopic wins. Curated from the phrase vocabulary already used for
+# risk scoring/classification (rules/*.json) so the same signal that drives
+# classification also drives titling.
+_TITLE_SUBTOPICS: Dict[str, List[Tuple[List[str], str]]] = {
+    "Confidentiality": [
+        (["means any information", "confidential information means", "definition of confidential"],
+         "Definition of Confidential Information"),
+        (["shall not disclose", "not disclose", "non-disclosure", "obligation of confidentiality"],
+         "Non-Disclosure Obligations"),
+        (["permitted to disclose", "may disclose", "required by law", "compelled by law", "required by applicable law"],
+         "Permitted Disclosure"),
+        (["return or destroy", "return all", "destroy all", "return of confidential", "return of all"],
+         "Return of Confidential Information"),
+        (["survive termination", "years after", "period of confidentiality", "remain in effect", "shall survive"],
+         "Confidentiality Period"),
+        (["does not include", "shall not apply", "exceptions", "excludes information", "not include information"],
+         "Exceptions to Confidentiality"),
+    ],
+    "Termination": [
+        (["for convenience"], "Termination for Convenience"),
+        (["material breach", "for cause", "cure period"], "Termination for Cause"),
+        (["written notice", "notice period", "days notice", "days' notice"], "Termination Notice Requirements"),
+        (["effect of termination", "upon termination", "survive termination"], "Effects of Termination"),
+    ],
+    "Liability": [
+        (["cap on liability", "limitation of liability", "limited to", "capped at", "no event"], "Limitation of Liability"),
+        (["consequential damages", "indirect damages", "special damages", "punitive damages"],
+         "Exclusion of Consequential Damages"),
+        (["joint and several"], "Joint and Several Liability"),
+    ],
+    "Payment": [
+        (["late fee", "penalty", "acceleration"], "Late Payment Penalties"),
+        (["interest"], "Interest on Outstanding Amounts"),
+        (["invoice", "invoicing"], "Invoicing Terms"),
+        (["due date", "due within", "net 30", "immediate payment"], "Payment Due Date"),
+        (["non-refundable"], "Non-Refundable Payments"),
+    ],
+    "Indemnity": [
+        (["hold harmless"], "Indemnification and Hold Harmless"),
+        (["third-party claims", "third party claims"], "Third-Party Claims Indemnity"),
+        (["sole negligence", "gross negligence"], "Indemnity for Negligence"),
+        (["unlimited indemnification"], "Scope of Indemnification"),
+    ],
+    "Compliance": [
+        (["anti-corruption", "fcpa"], "Anti-Corruption Compliance"),
+        (["sanctions"], "Sanctions Compliance"),
+        (["applicable laws", "regulations"], "Regulatory Compliance"),
+    ],
+    "Jurisdiction": [
+        (["governing law"], "Governing Law"),
+        (["venue", "forum"], "Venue and Forum Selection"),
+        (["jurisdiction"], "Governing Law and Jurisdiction"),
+    ],
+    "Force Majeure": [
+        (["act of god", "natural disaster"], "Force Majeure Events"),
+        (["unforeseeable"], "Unforeseeable Events (Force Majeure)"),
+    ],
+    "Arbitration": [
+        (["binding arbitration", "binding"], "Binding Arbitration"),
+        (["aaa", "jams"], "Arbitration Rules and Administration"),
+        (["dispute resolution"], "Dispute Resolution"),
+    ],
+}
+
+# Used only when none of the subtopic keywords above match — still specific
+# to the clause type, never the bare category name.
+_FALLBACK_TITLES: Dict[str, str] = {
+    "Termination": "Termination Rights",
+    "Liability": "Liability Provisions",
+    "Confidentiality": "Confidentiality Obligations",
+    "Arbitration": "Dispute Resolution via Arbitration",
+    "Payment": "Payment Terms",
+    "Indemnity": "Indemnification Obligations",
+    "Compliance": "Regulatory Compliance",
+    "Jurisdiction": "Governing Law and Jurisdiction",
+    "Force Majeure": "Force Majeure Events",
+}
+
+_TITLE_STOPWORDS = set(
+    "the a an and or but if then shall must will may not of to in on at by with "
+    "for from this that these those as is are be been being which who whom whose".split()
+)
+
+
+def _first_sentence_title(text: str, max_words: int = 8) -> str:
+    """Last-resort title when the clause type itself is unrecognized
+    ('General'): Title-Case the leading significant words of the first
+    sentence, so even an unclassified clause gets *something* distinct
+    rather than a bare 'General'."""
+    first_sentence = re.split(r"(?<=[.;])\s+", text.strip(), maxsplit=1)[0]
+    words = re.findall(r"[A-Za-z']+", first_sentence)
+    significant = [w for w in words if w.lower() not in _TITLE_STOPWORDS] or words
+    picked = significant[:max_words] or words[:max_words]
+    return " ".join(w.capitalize() for w in picked) or "General Provision"
+
+
+def generate_clause_title(clause_type: str, text: str) -> str:
+    """Rule-based, descriptive clause title for display — never the bare
+    clause_type/category, which callers should keep using separately for
+    grouping, filtering, and analytics. Checks a curated subtopic vocabulary
+    for the clause type first (most specific), then a generic per-type
+    fallback, then the clause's own leading words if the type is
+    unrecognized. No LLM call, so this is cheap enough to run on every
+    clause automatically at ingestion."""
+    text_lower = text.lower()
+    for keywords, title in _TITLE_SUBTOPICS.get(clause_type, []):
+        if any(kw in text_lower for kw in keywords):
+            return title
+    if clause_type in _FALLBACK_TITLES:
+        return _FALLBACK_TITLES[clause_type]
+    return _first_sentence_title(text)
 
 
 # ── Clause type detection (replaces per-block LLM verification) ────────────

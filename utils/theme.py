@@ -15,27 +15,50 @@ def is_light_theme() -> bool:
         return False
 
 
-def render_header(icon: str, title: str, subtitle: str = "", badge: str = "") -> None:
-    """Renders the shared professional page banner used at the top of every page.
+# Sentinel distinguishing "caller didn't pass doc_name" (no badge slot at
+# all — e.g. Comparison Center, which manages its own two documents and has
+# no single active document) from "caller passed doc_name=None" (show the
+# badge slot with a muted "No active document" state).
+_DOC_NAME_UNSET = object()
 
-    Replaces the old bare `st.title()` + `st.markdown()` subtitle pattern with
-    a consistent gradient icon badge, heading, and muted subtitle so every
-    page reads as part of one product instead of a loose collection of scripts.
+
+def render_header(icon: str, title: str, subtitle: str = "", badge: str = "", doc_name=_DOC_NAME_UNSET) -> None:
+    """Renders the shared, compact page banner used at the top of every page.
+
+    Slimmer than a filled card — just an icon, heading, muted subtitle, and
+    (optionally) the currently active document shown as a badge on the same
+    row, so pages no longer need their own separate "Active Document: X"
+    info banner underneath.
     """
     badge_html = f'<span class="page-header-badge">{badge}</span>' if badge else ""
     subtitle_html = f'<p class="page-header-subtitle">{subtitle}</p>' if subtitle else ""
 
+    if doc_name is _DOC_NAME_UNSET:
+        doc_html = ""
+    elif doc_name:
+        doc_html = (
+            '<div class="page-header-docname">'
+            f'<span class="page-header-docname-icon">📄</span>'
+            f'<span class="page-header-docname-value">{doc_name}</span>'
+            '</div>'
+        )
+    else:
+        doc_html = '<div class="page-header-docname page-header-docname-empty">No active document</div>'
+
     st.markdown(
         f"""
         <div class="page-header">
-            <div class="page-header-icon">{icon}</div>
-            <div class="page-header-text">
-                <div class="page-header-title-row">
-                    <h1 class="page-header-title">{title}</h1>
-                    {badge_html}
+            <div class="page-header-left">
+                <span class="page-header-icon-inline">{icon}</span>
+                <div class="page-header-text">
+                    <div class="page-header-title-row">
+                        <h1 class="page-header-title">{title}</h1>
+                        {badge_html}
+                    </div>
+                    {subtitle_html}
                 </div>
-                {subtitle_html}
             </div>
+            {doc_html}
         </div>
         """,
         unsafe_allow_html=True,
@@ -43,11 +66,20 @@ def render_header(icon: str, title: str, subtitle: str = "", badge: str = "") ->
 
 
 def render_metric_card(label: str, value, icon: str = "", accent: str = "var(--lq-accent)") -> str:
-    """Returns HTML for a single premium KPI card (caller wraps in st.markdown)."""
+    """Returns HTML for a single premium KPI card (caller wraps in st.markdown).
+
+    The value is always rendered in the neutral text color (not `accent`) so
+    a row of cards reads as one professional set of numbers instead of a
+    multi-color scatter — `accent` now only tints the small icon. `title=`
+    on the value holds the full text as a tooltip since long values (e.g. a
+    document type name) are truncated with an ellipsis rather than wrapped,
+    which is what kept breaking row alignment when one card's value ran
+    longer than its neighbors'.
+    """
     return f"""
     <div class="lq-metric-card">
         <div class="lq-metric-icon" style="color: {accent};">{icon}</div>
-        <div class="lq-metric-val" style="color: {accent};">{value}</div>
+        <div class="lq-metric-val" title="{value}">{value}</div>
         <div class="lq-metric-title">{label}</div>
     </div>
     """

@@ -44,6 +44,19 @@ def render():
     if st.button("⚖️ Compare Documents", type="primary"):
         with st.spinner("Agent 10 is analyzing document variations and risk changes..."):
             try:
+                # One-time upgrade for documents ingested before clause_title
+                # generation existed: their section_name is still the bare
+                # category, which would otherwise confuse clause-number/title
+                # matching (agents/comparison_agent._key_match_pairs) into
+                # coincidental cross-matches. Same flag/pattern as
+                # views/clause_analysis.py and views/risk_analysis.py.
+                from agents.clause_identifier_agent import backfill_clause_titles_for_document
+                for doc_id in (doc_a_id, doc_b_id):
+                    doc = crud.get_document_by_id(doc_id)
+                    if doc and not doc.get("clause_titles_backfilled"):
+                        backfill_clause_titles_for_document(doc_id)
+                        crud.update_document_analysis(doc_id, clause_titles_backfilled=True)
+
                 clauses_a = crud.get_clauses_for_document(doc_a_id)
                 clauses_b = crud.get_clauses_for_document(doc_b_id)
                 doc_a_name = doc_options[doc_a_id]

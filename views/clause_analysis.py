@@ -119,29 +119,37 @@ def render_toggle(flag_key: str, button_key: str, label: str) -> bool:
 
 
 def render():
+    doc_id = st.session_state.active_doc_id
+    doc_name = st.session_state.active_doc_name
+
     render_header(
         "🔍",
         "Clause Analysis",
-        "A clause-centric view — identification, importance, compliance, and impact for every clause "
-        "in one place, with an AI recommendation and a one-click Simplify Clause breakdown "
-        "(plain-English explanation, rights, obligations, and hidden risks).",
-        badge="Agents 2 · 3 · 6 · 7"
+        "Detailed clause-level analysis of the active document",
+        badge="Agents 2 · 3 · 6 · 7",
+        doc_name=doc_name,
     )
-
-    doc_id = st.session_state.active_doc_id
-    doc_name = st.session_state.active_doc_name
 
     if not doc_id:
         st.warning("⚠️ Please select an active document in the sidebar or upload one to begin.")
         return
-
-    st.info(f"Analyzing Document: **{doc_name}**")
 
     clauses = crud.get_clauses_for_document(doc_id)
 
     if not clauses:
         st.info("No clauses parsed for this document.")
         return
+
+    # One-time upgrade for documents ingested before clause_title generation
+    # existed: their section_name is still the bare category (e.g. every
+    # Payment clause literally titled "Payment"). Cheap and rule-based, so it
+    # runs silently the first time this document is viewed after the fix.
+    document = crud.get_document_by_id(doc_id)
+    if document and not document.get("clause_titles_backfilled"):
+        from agents.clause_identifier_agent import backfill_clause_titles_for_document
+        if backfill_clause_titles_for_document(doc_id):
+            clauses = crud.get_clauses_for_document(doc_id)
+        crud.update_document_analysis(doc_id, clause_titles_backfilled=True)
 
     serializable_clauses = [
         {
