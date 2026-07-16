@@ -680,19 +680,39 @@ st.markdown("""
         width: 400px;
         max-height: 70vh;
         overflow-y: auto;
-        background: var(--secondary-background-color) !important;
+        background-color: var(--secondary-background-color) !important;
         opacity: 1 !important;
         isolation: isolate;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
         border: 1px solid var(--lq-border) !important;
         border-radius: 18px !important;
         padding: 16px !important;
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.45);
     }
-    /* Streamlit's own generated styles on the inner vertical block can carry
-       a transparent background; without this the panel behind them shows
-       through the fixed, positioned panel above instead of being opaque. */
-    div[class*="st-key-lq_chat_panel"] [data-testid="stVerticalBlock"] {
-        background: var(--secondary-background-color) !important;
+    /* Streamlit wraps every nested container/expander/chat-message in its
+       own block div, several of which ship with an explicit transparent
+       background of their own — without repainting all of them opaque too,
+       the dashboard content sitting directly behind the fixed panel shows
+       through in exactly those spots even though the panel's outer
+       background above is solid. */
+    div[class*="st-key-lq_chat_panel"] [data-testid="stVerticalBlock"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stVerticalBlockBorderWrapper"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stExpander"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stExpander"] summary,
+    div[class*="st-key-lq_chat_panel"] [data-testid="stExpanderDetails"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stChatMessage"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stChatMessageContent"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stElementContainer"],
+    div[class*="st-key-lq_chat_panel"] .element-container {
+        background-color: var(--secondary-background-color) !important;
+    }
+    /* Citations expander content sits one shade darker/lighter than the
+       panel so it reads as a distinct nested surface instead of blending
+       into the chat bubble around it. */
+    div[class*="st-key-lq_chat_panel"] [data-testid="stExpanderDetails"] {
+        background-color: color-mix(in srgb, var(--secondary-background-color) 85%, var(--text-color) 6%) !important;
+        border-radius: 0 0 8px 8px;
     }
     @media (max-width: 500px) {
         div[class*="st-key-lq_chat_panel"] { width: 92vw; right: 4vw; }
