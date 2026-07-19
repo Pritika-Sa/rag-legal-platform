@@ -24,3 +24,8 @@ rank_bm25>=0.2.2
 langdetect>=1.0.9
 numpy>=1.26.0
 scipy>=1.11.0
+
+# agents/feature_extraction_agent.py (Hybrid Explainable Risk Engine) — NER
+# + dependency parsing. After installing, run once:
+#   python -m spacy download en_core_web_sm
+spacy>=3.8.0

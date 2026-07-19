@@ -1,6 +1,9 @@
+import logging
 from datetime import datetime, timezone
 from database.connection import get_db
 from database.models import _get_next_id
+
+logger = logging.getLogger(__name__)
 
 
 def _now():
@@ -95,7 +98,8 @@ def delete_document(doc_id):
 
 def add_clause(doc_id, section_name, text_content, page_num=None,
                classification=None, risk_category=None, risk_level="None",
-               explanation=None, simplification=None, risk_score=None):
+               explanation=None, simplification=None, risk_score=None,
+               confidence=None, dimension_breakdown=None):
     """Inserts a clause and returns its integer ID."""
     db = get_db()
     clause_id = _get_next_id("clauses")
@@ -110,6 +114,8 @@ def add_clause(doc_id, section_name, text_content, page_num=None,
         "risk_category": risk_category,
         "risk_level": risk_level,
         "risk_score": risk_score,
+        "confidence": confidence,
+        "dimension_breakdown": dimension_breakdown or [],
         "explanation": explanation,
         "simplification": simplification,
     })
@@ -146,6 +152,8 @@ def add_clauses_bulk(doc_id, clauses):
             "risk_category": c.get("risk_category"),
             "risk_level": c.get("risk_level", "None"),
             "risk_score": c.get("risk_score"),
+            "confidence": c.get("confidence"),
+            "dimension_breakdown": c.get("dimension_breakdown") or [],
             "explanation": c.get("explanation"),
             "simplification": c.get("simplification"),
         }
@@ -161,6 +169,46 @@ def get_clauses_for_document(doc_id):
     return list(db.clauses.find({"doc_id": doc_id}).sort("id", 1))
 
 
+def get_recent_clause_risk_scores(limit=2000):
+    """Sample of persisted per-clause LRSI scores across every document,
+    used by risk_engine.thresholds.ThresholdRegistry to compute data-derived
+    clause-risk classification cut points (Jenks natural breaks) instead of
+    a fixed 35/70 split. Newest first, so a recalibration reflects how the
+    current pipeline scores clauses, not scores from an earlier version of
+    it.
+
+    Returns [] on any DB error instead of raising: a transient MongoDB
+    hiccup while fetching *reference data for a threshold recalibration*
+    must never break clause risk scoring itself. An empty list makes
+    ThresholdRegistry/compute_thresholds fall back to the fixed cold-start
+    cuts, exactly the same safe path a brand-new installation takes."""
+    try:
+        db = get_db()
+        docs = db.clauses.find(
+            {"risk_score": {"$ne": None}}, {"risk_score": 1, "_id": 0}
+        ).sort("id", -1).limit(limit)
+        return [d["risk_score"] for d in docs]
+    except Exception:
+        logger.exception("Failed to fetch reference clause risk scores; threshold recalibration will fall back to fixed defaults")
+        return []
+
+
+def get_recent_document_risk_scores(limit=500):
+    """Same idea as get_recent_clause_risk_scores but for document-level
+    aggregate scores (documents.document_risk_score), used to compute the
+    4-tier Low/Medium/High/Critical document thresholds. Same fail-safe:
+    returns [] on any DB error rather than raising."""
+    try:
+        db = get_db()
+        docs = db.documents.find(
+            {"document_risk_score": {"$ne": None}}, {"document_risk_score": 1, "_id": 0}
+        ).sort("id", -1).limit(limit)
+        return [d["document_risk_score"] for d in docs]
+    except Exception:
+        logger.exception("Failed to fetch reference document risk scores; threshold recalibration will fall back to fixed defaults")
+        return []
+
+
 def update_clause_title(clause_id, section_name):
     """Overwrites just a clause's display title (section_name) — used to
     backfill clauses ingested before clause_title generation existed, whose
@@ -170,10 +218,15 @@ def update_clause_title(clause_id, section_name):
     db.clauses.update_one({"id": clause_id}, {"$set": {"section_name": section_name}})
 
 
-def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explanation, source="LLM"):
+def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explanation, source="LLM",
+                        confidence=None, dimension_breakdown=None):
     """Overwrites a clause's risk fields (e.g. after an on-demand LLM
     re-analysis) without touching text_content/version — this isn't an edit
-    to the clause itself, just a re-scoring."""
+    to the clause itself, just a re-scoring. `dimension_breakdown` defaults
+    to [] (cleared) rather than left untouched: an LLM re-score invalidates
+    the Hybrid Explainable Risk Engine's old per-dimension breakdown, since
+    it no longer sums to the new risk_score — showing it next to a
+    different number would be misleading."""
     db = get_db()
     clause = db.clauses.find_one({"id": clause_id})
     if not clause:
@@ -185,6 +238,8 @@ def update_clause_risk(clause_id, risk_level, risk_category, risk_score, explana
             "risk_level": risk_level,
             "risk_category": risk_category,
             "risk_score": risk_score,
+            "confidence": confidence,
+            "dimension_breakdown": dimension_breakdown or [],
             "explanation": explanation,
         }},
     )

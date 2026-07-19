@@ -72,6 +72,7 @@ CATEGORY_CONTEXT = {
     "Legal": "This clause carries legal risk — it can affect your legal standing, obligations, or ability to enforce your rights.",
     "Compliance": "This clause carries compliance risk — failing to meet its requirements could expose you to regulatory or contractual consequences.",
     "Operational": "This clause carries operational risk — it can disrupt how the agreement is carried out in practice.",
+    "Ambiguity": "This clause carries ambiguity risk — vague or hedged language makes its obligations harder to predict or enforce.",
 }
 
 # Plain-English reason each risk-increasing phrase actually matters — not
@@ -139,13 +140,47 @@ def _bulletize(explanation):
     return [p.strip() for p in parts if len(p.strip()) > 3][:6]
 
 
-def _risk_explanation_bullets(explanation):
-    """Plain-English bullets describing *why* a clause is risky — never the
-    point arithmetic behind its score. Rule-based explanations get a leading
-    "why this category matters" sentence plus one bullet per risk-increasing
-    phrase actually found (mitigating, negative-point phrases are dropped —
-    they're reasons the clause is *less* risky, not why it was flagged);
-    anything else falls back to simple sentence-splitting."""
+def _dimension_breakdown_bullets(dimension_breakdown):
+    """Preferred path: builds bullets directly from the Hybrid Explainable
+    Risk Engine's per-dimension breakdown (risk_engine/explain.py) — no
+    regex parsing needed, since the structured data already says exactly
+    why each dimension contributed. One bullet per dimension that actually
+    contributed positively, in the same largest-first order the engine
+    already sorted them in."""
+    bullets = []
+    for dim in dimension_breakdown:
+        if not isinstance(dim, dict) or dim.get("contribution", 0) <= 0:
+            continue
+        dimension = dim.get("dimension", "")
+        context = CATEGORY_CONTEXT.get(dimension, f"This clause carries {dimension.lower()} risk." if dimension else "")
+        if not context:
+            continue
+
+        evidence_bits = []
+        feature_evidence = dim.get("feature_evidence") or []
+        if feature_evidence:
+            evidence_bits.append(feature_evidence[0])
+        semantic_evidence = dim.get("semantic_evidence") or {}
+        if semantic_evidence.get("prototype"):
+            evidence_bits.append(f'reads similarly to "{semantic_evidence["prototype"]}"')
+
+        detail = f" ({'; '.join(evidence_bits)})" if evidence_bits else ""
+        bullets.append(f"{context}{detail}")
+    return bullets[:6]
+
+
+def _risk_explanation_bullets(explanation, dimension_breakdown=None):
+    """Plain-English bullets describing *why* a clause is risky. Prefers the
+    Hybrid Explainable Risk Engine's structured dimension_breakdown when
+    present (every clause scored since that engine went live); falls back
+    to parsing the older keyword-scorer's explanation string format for
+    documents processed before it existed, or to simple sentence-splitting
+    if neither shape matches."""
+    if dimension_breakdown:
+        bullets = _dimension_breakdown_bullets(dimension_breakdown)
+        if bullets:
+            return bullets
+
     if not explanation:
         return []
     text = explanation.strip()
@@ -252,20 +287,19 @@ def render():
         crud.update_document_analysis(doc_id, clause_titles_backfilled=True)
 
     # ---------------------------------------------------------
-    # OVERVIEW — just two things up top: the authenticity score, and a
-    # Quick Estimate trigger. The gauge + recommendations only appear once
+    # OVERVIEW — a Quick Estimate trigger. The gauge + recommendations only appear once
     # the button is clicked (persisted per-document in session_state so
     # picking a filter below doesn't make it vanish again).
     # ---------------------------------------------------------
     with st.container(key="risk_overview_card"):
-        st.markdown('<div class="lq-overview-title">📊 Risk &amp; Authenticity Overview</div>', unsafe_allow_html=True)
+        st.markdown('<div class="lq-overview-title">📊 Risk Overview</div>', unsafe_allow_html=True)
 
         a_score = active_doc.get("authenticity_score")
         a_level = active_doc.get("authenticity_level", "Unknown")
         a_color = "#00CC96" if a_level == "Authentic" else "#FECB52" if a_level == "Suspicious" else "#EF553B"
 
-        stat_cols = st.columns(2)
-        with stat_cols[0]:
+        stat_cols = st.columns([0.01, 1])
+        if False:  # Authenticity is still calculated and stored; it is intentionally hidden from the UI.
             st.markdown(
                 render_metric_card("Authenticity Score", f"{a_score}/100" if a_score is not None else "—", "🔍", accent=a_color),
                 unsafe_allow_html=True,
@@ -405,7 +439,7 @@ def render():
 
             # ── Why this clause is risky, in plain English ──────────
             st.markdown("##### 🧠 Why This Clause Is Risky")
-            bullets = _risk_explanation_bullets(c.get("explanation"))
+            bullets = _risk_explanation_bullets(c.get("explanation"), c.get("dimension_breakdown"))
             if bullets:
                 bullets_html = "".join(f"<li>{_highlight(b)}</li>" for b in bullets)
                 st.markdown(f'<ul class="lq-explanation-list">{bullets_html}</ul>', unsafe_allow_html=True)

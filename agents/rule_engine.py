@@ -6,10 +6,19 @@ instead. Keeping them in one place means an examiner (or future maintainer)
 only has to review this module to understand the entire non-LLM reasoning
 layer of the pipeline.
 
-All rule *content* (keyword lists, regexes, risk tables, phrase-point
-tables) lives in JSON files under `rules/` at the repo root, loaded once at
-import time. Editing a rule means editing JSON, not Python — no redeploy of
-logic needed to retune a threshold or add a keyword.
+All rule *content* (keyword lists, regexes, importance/impact tables) lives
+in JSON files under `rules/` at the repo root, loaded once at import time.
+Editing a rule means editing JSON, not Python — no redeploy of logic needed
+to retune a threshold or add a keyword.
+
+Clause *risk* scoring is no longer part of this module: the old fixed
+keyword-point scorer (RISK_TABLE/TIER_BASE_POINTS/RISK_PHRASE_POINTS/
+score_risk_points/risk_score_to_level, backed by rules/risk_rules.json) has
+been replaced end-to-end by the Hybrid Explainable Risk Engine in
+risk_engine/ — see agents/analyzer_agent.py and agents/feature_extraction_agent.py.
+ESCALATOR_WEIGHTS/MITIGATOR_WEIGHTS/fired_modifiers() remain here because
+importance_agent.py and impact_agent.py (a different concern from risk
+scoring) still use them.
 """
 
 import json
@@ -49,17 +58,6 @@ def _require(data: dict, key: str, filename: str):
 CLAUSE_RULES: Dict[str, dict] = _load_json("clause_rules.json")
 if not CLAUSE_RULES:
     raise RuleLoadError("clause_rules.json loaded but is empty")
-
-# ── Risk rules: levels, per-type base tier, tier->points, phrase->points ───
-
-_risk_raw = _load_json("risk_rules.json")
-RISK_LEVELS: List[str] = _require(_risk_raw, "risk_levels", "risk_rules.json")
-_risk_table_raw = _require(_risk_raw, "risk_table", "risk_rules.json")
-RISK_TABLE: Dict[str, Tuple[str, str]] = {
-    ct: (v["category"], v["base_level"]) for ct, v in _risk_table_raw.items()
-}
-TIER_BASE_POINTS: Dict[str, int] = _require(_risk_raw, "tier_base_points", "risk_rules.json")
-RISK_PHRASE_POINTS: Dict[str, Dict[str, int]] = _risk_raw.get("risk_phrase_points", {})
 
 # ── Importance tiers ─────────────────────────────────────────────────────────
 
@@ -331,25 +329,10 @@ def detect_clause_type(text: str) -> Tuple[str, float]:
     return best_type, best_score
 
 
-# ── Risk level escalation (ordinal, legacy-compatible) ──────────────────────
-
-def apply_risk_modifiers(base_level: str, text: str) -> str:
-    """Shifts `base_level` up/down the RISK_LEVELS ladder based on the total
-    escalating/mitigating point weight of language found in `text` (e.g.
-    'uncapped' pushes risk up, 'capped at' pulls it back down). Point totals
-    are converted into ordinal steps, capped at +3/-2 tiers, so a clause
-    packed with escalating language can't jump past 'High' in one shot."""
-    text_lower = text.lower()
-    escalation_points = sum(w for phrase, w in ESCALATOR_WEIGHTS.items() if phrase in text_lower)
-    mitigation_points = sum(w for phrase, w in MITIGATOR_WEIGHTS.items() if phrase in text_lower)
-    escalation_steps = min(escalation_points // 15, 3)
-    mitigation_steps = min(mitigation_points // 15, 2)
-    net_shift = escalation_steps - mitigation_steps
-
-    idx = RISK_LEVELS.index(base_level) if base_level in RISK_LEVELS else 0
-    idx = max(0, min(len(RISK_LEVELS) - 1, idx + net_shift))
-    return RISK_LEVELS[idx]
-
+# ── Escalator/mitigator vocabulary lookup (shared by importance_agent.py ───
+# and impact_agent.py — NOT used for risk scoring; see risk_engine/ for the
+# Hybrid Explainable Risk Engine that replaced the old point-based scorer
+# that used to live in this section.)
 
 def fired_modifiers(text: str) -> Tuple[List[str], List[str]]:
     """Returns (escalators_found, mitigators_found) — used to build
@@ -358,45 +341,6 @@ def fired_modifiers(text: str) -> Tuple[List[str], List[str]]:
     escalators = [w for w in MODIFIER_ESCALATORS if w in text_lower]
     mitigators = [w for w in MODIFIER_MITIGATORS if w in text_lower]
     return escalators, mitigators
-
-
-# ── Content-based numeric risk scoring (Stage 2, no LLM) ────────────────────
-
-def score_risk_points(clause_type: str, text: str) -> Tuple[int, List[str]]:
-    """Numeric 0-100 risk score for a clause, built from a base tier score
-    plus additive/subtractive points for specific phrases actually present
-    in the clause text — unlike apply_risk_modifiers (which only shifts an
-    ordinal tier by counting how many generic escalator/mitigator words
-    appear), this weights *which* phrase fired and by how much, per clause
-    type. Returns (score, contributions) where contributions is a list of
-    human-readable strings explaining every point added/subtracted, so
-    callers can build an explainable 'why' string instead of a bare number.
-    """
-    text_lower = text.lower()
-    _, base_level = RISK_TABLE.get(clause_type, RISK_TABLE["General"])
-    score = TIER_BASE_POINTS.get(base_level, 5)
-    contributions = [f"base tier '{base_level}' = {score}"]
-
-    phrase_table = RISK_PHRASE_POINTS.get(clause_type)
-    if phrase_table:
-        for phrase, points in phrase_table.items():
-            if phrase in text_lower:
-                score += points
-                contributions.append(f"'{phrase}' {'+' if points >= 0 else ''}{points}")
-    else:
-        # No clause-type-specific table: fall back to the global
-        # escalator/mitigator vocabulary as generic point contributions.
-        for phrase, points in ESCALATOR_WEIGHTS.items():
-            if phrase in text_lower:
-                score += points
-                contributions.append(f"'{phrase}' +{points}")
-        for phrase, points in MITIGATOR_WEIGHTS.items():
-            if phrase in text_lower:
-                score -= points
-                contributions.append(f"'{phrase}' -{points}")
-
-    score = max(0, min(100, score))
-    return score, contributions
 
 
 def detect_query_intent(query: str) -> Dict[str, Any]:
@@ -418,16 +362,3 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     if len(matched_types) == 1:
         return {"clause_type": matched_types[0]}
     return {"clause_type": {"$in": matched_types}}
-
-
-def risk_score_to_level(score: int) -> str:
-    """Maps a numeric 0-100 risk score back to the ordinal risk_level string
-    every existing consumer (UI color-coding, contradiction_agent, Chroma
-    metadata) expects."""
-    if score >= 70:
-        return "High"
-    if score >= 40:
-        return "Medium"
-    if score >= 15:
-        return "Low"
-    return "None"

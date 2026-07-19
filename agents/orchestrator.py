@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from agents.parser_agent import parse_document, parse_document_pages, enforce_chunk_bounds
 from agents.clause_identifier_agent import identify_clauses
 from agents.importance_agent import assess_clause_importance
-from agents.analyzer_agent import analyze_clause
+from agents.analyzer_agent import assess_clauses_batch
 from agents.risk_scoring_agent import assess_document_risk
 from agents.contradiction_agent import find_contradictions
 from agents.impact_agent import analyze_clause_impact
@@ -149,20 +149,29 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
             c["importance_score"] = 0
             c["importance_category"] = "Informational"
 
-        try:
-            analysis = analyze_clause(c.get("section_name", "Clause"), c["text_content"])
-            c["risk_level"] = analysis.risk_level
-            c["risk_category"] = analysis.risk_category
-            c["risk_score"] = analysis.risk_score
-            c["explanation"] = analysis.explanation
-        except Exception as e:
-            logger.exception(
-                f"Clause analysis failed for '{c.get('section_name', 'Clause')}' "
-                f"(doc_id={state.get('doc_id')}): {e}"
-            )
+    # Risk scoring runs as one batch call across every clause in the
+    # document, not per-clause inside the loop above: the Hybrid
+    # Explainable Risk Engine's entropy-weighted dimension fusion (see
+    # risk_engine/fusion.py) is a document-level statistic — scoring one
+    # clause in isolation can't produce it. This replaces the old
+    # per-clause analyze_clause()/score_risk_points() keyword scorer.
+    try:
+        risk_results, _document_risk_assessment = assess_clauses_batch(identified)
+        for c, result in zip(identified, risk_results):
+            c["risk_level"] = result.risk_level
+            c["risk_category"] = result.risk_category
+            c["risk_score"] = result.risk_score
+            c["confidence"] = result.confidence
+            c["dimension_breakdown"] = [d.model_dump() for d in result.dimension_breakdown]
+            c["explanation"] = result.explanation
+    except Exception as e:
+        logger.exception(f"Batch risk assessment failed (doc_id={state.get('doc_id')}): {e}")
+        for c in identified:
             c["risk_level"] = "None"
             c["risk_category"] = "Unknown"
             c["risk_score"] = None
+            c["confidence"] = None
+            c["dimension_breakdown"] = []
             c["explanation"] = "Error analyzing risk"
 
     clause_ids = crud.add_clauses_bulk(state["doc_id"], identified)

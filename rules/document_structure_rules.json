@@ -1,0 +1,73 @@
+{
+  "generic_minimal": {
+    "sections": [
+      {"name": "Title", "patterns": ["\\bagreement\\b", "\\bpolicy\\b", "\\bcontract\\b", "\\bdeed\\b"]},
+      {"name": "Parties", "patterns": ["\\bbetween\\b.{0,200}?\\band\\b", "\\bparty\\b", "\\bparties\\b"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b", "\\d{4}-\\d{2}-\\d{2}", "\\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\\b"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b", "in witness whereof"]}
+    ]
+  },
+  "Insurance Policy": {
+    "sections": [
+      {"name": "Title", "patterns": ["insurance policy", "policy schedule", "policy document"]},
+      {"name": "Policy Number", "patterns": ["policy\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Policyholder/Insured", "patterns": ["\\bpolicyholder\\b", "\\binsured\\b", "\\bproposer\\b"]},
+      {"name": "Coverage/Sum Assured", "patterns": ["sum assured", "\\bcoverage\\b", "\\bcover\\b"]},
+      {"name": "Premium", "patterns": ["\\bpremium\\b"]},
+      {"name": "Effective Date", "patterns": ["effective date", "commencement date", "date of issue"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b", "authorized signatory"]}
+    ]
+  },
+  "Loan Agreement": {
+    "sections": [
+      {"name": "Title", "patterns": ["loan agreement"]},
+      {"name": "Parties (Lender/Borrower)", "patterns": ["\\blender\\b", "\\bborrower\\b"]},
+      {"name": "Principal Amount", "patterns": ["principal amount", "loan amount"]},
+      {"name": "Repayment Terms", "patterns": ["\\brepayment\\b", "\\binstallment", "\\binstalment"]},
+      {"name": "Interest Rate", "patterns": ["interest rate", "rate of interest"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b"]}
+    ]
+  },
+  "Non-Disclosure Agreement (NDA)": {
+    "sections": [
+      {"name": "Title", "patterns": ["non[- ]?disclosure agreement", "confidentiality agreement"]},
+      {"name": "Parties", "patterns": ["disclosing party", "receiving party"]},
+      {"name": "Confidential Information Definition", "patterns": ["confidential information means", "definition of confidential"]},
+      {"name": "Term", "patterns": ["period of confidentiality", "\\bterm of this agreement\\b"]},
+      {"name": "Governing Law", "patterns": ["governing law", "governed by"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b"]}
+    ]
+  },
+  "Employment Agreement": {
+    "sections": [
+      {"name": "Title", "patterns": ["employment agreement", "letter of appointment"]},
+      {"name": "Parties (Employer/Employee)", "patterns": ["\\bemployer\\b", "\\bemployee\\b"]},
+      {"name": "Position/Designation", "patterns": ["\\bdesignation\\b", "\\bposition\\b", "job title"]},
+      {"name": "Salary/Compensation", "patterns": ["\\bsalary\\b", "\\bcompensation\\b"]},
+      {"name": "Effective Date", "patterns": ["date of joining", "effective date", "commencement date"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b"]}
+    ]
+  },
+  "Lease Agreement": {
+    "sections": [
+      {"name": "Title", "patterns": ["lease agreement"]},
+      {"name": "Parties (Lessor/Lessee)", "patterns": ["\\blessor\\b", "\\blessee\\b"]},
+      {"name": "Premises Description", "patterns": ["\\bpremises\\b", "\\bleasehold\\b"]},
+      {"name": "Monthly Rent", "patterns": ["monthly rent", "\\brent\\b"]},
+      {"name": "Lease Term", "patterns": ["lease term", "\\bterm of\\b"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b"]}
+    ]
+  },
+  "Service Agreement": {
+    "sections": [
+      {"name": "Title", "patterns": ["service agreement"]},
+      {"name": "Parties", "patterns": ["service provider", "\\bclient\\b"]},
+      {"name": "Scope of Work", "patterns": ["scope of work", "\\bdeliverables\\b", "statement of work"]},
+      {"name": "Fees/Payment", "patterns": ["\\bfees?\\b", "\\bpayment\\b"]},
+      {"name": "Term", "patterns": ["\\bterm\\b"]},
+      {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b"]}
+    ]
+  }
+}

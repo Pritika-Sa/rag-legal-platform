@@ -538,15 +538,24 @@ st.markdown("""
         color: var(--text-color);
         margin-bottom: 14px;
     }
-    /* "Quick Estimate" trigger card — same footprint/height as the
-       Authenticity metric card next to it, so the top row stays balanced. */
+    /* Compact, centered Quick Estimate action. */
     div[class*="st-key-quick_estimate_card"] {
         border-radius: 14px !important;
-        padding: 22px 18px !important;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        height: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 12px 16px !important;
+    }
+    div[class*="st-key-quick_estimate_card"] .stButton {
+        text-align: center;
+    }
+    div[class*="st-key-quick_estimate_card"] .stButton > button {
+        width: 220px !important;
+        min-height: 38px !important;
+        padding: 0.4rem 1rem !important;
+    }
+    div[class*="st-key-quick_estimate_card"] [data-testid="stCaptionContainer"] {
+        margin-top: 2px;
+        text-align: center;
     }
 
     /* "View Full Clause" toggle — a plain text link instead of the app's
@@ -680,7 +689,7 @@ st.markdown("""
         width: 400px;
         max-height: 70vh;
         overflow-y: auto;
-        background-color: var(--secondary-background-color) !important;
+        background-color: #ffffff !important;
         opacity: 1 !important;
         isolation: isolate;
         backdrop-filter: none !important;
@@ -705,14 +714,16 @@ st.markdown("""
     div[class*="st-key-lq_chat_panel"] [data-testid="stChatMessageContent"],
     div[class*="st-key-lq_chat_panel"] [data-testid="stElementContainer"],
     div[class*="st-key-lq_chat_panel"] .element-container {
-        background-color: var(--secondary-background-color) !important;
+        background-color: #ffffff !important;
     }
-    /* Citations expander content sits one shade darker/lighter than the
-       panel so it reads as a distinct nested surface instead of blending
-       into the chat bubble around it. */
+    /* Keep the citations surface opaque as well. */
     div[class*="st-key-lq_chat_panel"] [data-testid="stExpanderDetails"] {
-        background-color: color-mix(in srgb, var(--secondary-background-color) 85%, var(--text-color) 6%) !important;
+        background-color: #ffffff !important;
         border-radius: 0 0 8px 8px;
+    }
+    div[class*="st-key-lq_chat_panel"] [data-testid="stChatInput"],
+    div[class*="st-key-lq_chat_panel"] [data-testid="stChatInput"] textarea {
+        background-color: #ffffff !important;
     }
     @media (max-width: 500px) {
         div[class*="st-key-lq_chat_panel"] { width: 92vw; right: 4vw; }
@@ -888,9 +899,7 @@ with st.sidebar:
     if "last_analysis_summary" in st.session_state:
         summary = st.session_state.pop("last_analysis_summary")
         st.success(f"🎉 '{summary['doc_name']}' processed — {summary['clause_count']} clauses found.")
-        st.caption(
-            f"Risk {summary['document_risk_score']}/100 · Authenticity {summary['authenticity_score']}/100"
-        )
+        st.caption(f"Risk {summary['document_risk_score']}/100")
         if summary.get("parsing_quality_warning"):
             st.warning(f"⚠️ {summary['parsing_quality_warning']}")
 

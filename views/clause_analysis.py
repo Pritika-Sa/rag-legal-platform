@@ -228,16 +228,16 @@ def render():
 
         with st.container(border=True):
             # ── Summary cards (Title / Page / Category / Type / Characters) ──
-            card_cols = st.columns([1.6, 0.8, 1, 1, 1])
+            card_cols = st.columns([1.6, 1, 1])
             with card_cols[0]:
                 st.markdown(render_mini_card("Clause Title", c["section_name"], "📌"), unsafe_allow_html=True)
-            with card_cols[1]:
+            if False:  # Page is retained in stored clause data but not displayed.
                 st.markdown(render_mini_card("Page", _fmt(c.get("page_num"), "N/A"), "📄"), unsafe_allow_html=True)
-            with card_cols[2]:
+            with card_cols[1]:
                 st.markdown(render_mini_card("Category", _fmt(c.get("risk_category")), "🏷"), unsafe_allow_html=True)
-            with card_cols[3]:
+            with card_cols[2]:
                 st.markdown(render_mini_card("Type", _fmt(c.get("classification"), "Unclassified"), "📑"), unsafe_allow_html=True)
-            with card_cols[4]:
+            if False:  # Character count is retained for internal use but not displayed.
                 st.markdown(render_mini_card("Characters", f"{len(text_content):,}", "🔤"), unsafe_allow_html=True)
 
             # ── Clause Details Table ─────────────────────────────────

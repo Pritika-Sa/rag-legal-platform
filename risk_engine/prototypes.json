@@ -1,0 +1,22 @@
+{
+  "Financial": [
+    "This clause creates unlimited or uncapped financial exposure for a party.",
+    "This clause imposes a significant monetary penalty or liquidated damages.",
+    "This clause requires immediate or accelerated payment obligations."
+  ],
+  "Legal": [
+    "This clause imposes broad or one-sided indemnification obligations.",
+    "This clause allows termination without cause or without notice.",
+    "This clause requires a party to waive significant legal rights."
+  ],
+  "Compliance": [
+    "This clause imposes regulatory or statutory compliance obligations.",
+    "This clause is governed by a specific jurisdiction's laws and courts.",
+    "This clause requires adherence to sanctions or anti-corruption regulations."
+  ],
+  "Operational": [
+    "This clause imposes tight deadlines or short notice periods.",
+    "This clause creates dependencies on multiple other obligations or milestones.",
+    "This clause requires ongoing service level or delivery commitments."
+  ]
+}
