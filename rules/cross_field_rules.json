@@ -1,0 +1,18 @@
+{
+  "Insurance Policy": [
+    {"name": "Policy Number", "pattern": "policy\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*([A-Z0-9][A-Z0-9\\-/]*)"},
+    {"name": "Sum Assured", "pattern": "sum assured[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+  ],
+  "Loan Agreement": [
+    {"name": "Principal Amount", "pattern": "principal amount[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+  ],
+  "Lease Agreement": [
+    {"name": "Monthly Rent", "pattern": "monthly rent[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+  ],
+  "Employment Agreement": [
+    {"name": "Salary", "pattern": "salary[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+  ],
+  "Service Agreement": [
+    {"name": "Fees", "pattern": "fees?[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+  ]
+}

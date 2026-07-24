@@ -12,6 +12,16 @@ BOILERPLATE_HEADING_WORDS = ["preamble", "notice", "signature", "contact", "reci
 UNLIMITED_WORDS = {"uncapped", "unlimited"}
 PENALTY_WORDS = {"penalty", "liquidated damages"}
 
+# Base scores per clause-type tier. Named/exported (rather than left as
+# inline literals) so other modules can reuse the same "how important does
+# this codebase already consider this tier" numbers instead of inventing
+# their own — see authenticity/clauses.py, which reuses these as
+# mandatory-clause weights rather than hand-picking new authenticity-
+# specific weight values.
+CRITICAL_BASE_SCORE = 80
+IMPORTANT_BASE_SCORE = 55
+INFORMATIONAL_BASE_SCORE = 30
+
 
 class ClauseImportanceResult(BaseModel):
     importance_score: int = Field(description="Importance score between 0 and 100.")
@@ -35,11 +45,11 @@ def assess_clause_importance(section_name: str, clause_text: str) -> ClauseImpor
     clause_type, _confidence = detect_clause_type(combined_text)
 
     if clause_type in CRITICAL_TIER_TYPES:
-        score = 80
+        score = CRITICAL_BASE_SCORE
     elif clause_type in IMPORTANT_TIER_TYPES:
-        score = 55
+        score = IMPORTANT_BASE_SCORE
     else:
-        score = 30
+        score = INFORMATIONAL_BASE_SCORE
 
     escalators, _mitigators = fired_modifiers(combined_text)
     has_money = bool(extract_money(clause_text))

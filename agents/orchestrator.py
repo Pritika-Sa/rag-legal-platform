@@ -15,7 +15,7 @@ from agents.contradiction_agent import find_contradictions
 from agents.impact_agent import analyze_clause_impact
 from agents.knowledge_graph_agent import extract_knowledge_graph
 from agents.dependency_agent import extract_clause_dependencies
-from agents.authenticity_agent import assess_document_authenticity
+from agents.authenticity_agent import assess_and_persist_document_authenticity
 from agents.audit_agent import perform_macro_audit
 from agents import graph_store
 from services.document_classifier import classify_document_type
@@ -221,28 +221,28 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
 
 
 def authenticity_check_node(state: AgentState) -> Dict[str, Any]:
-    """Deterministic authenticity check (Stage 2, no LLM) — deliberately
-    separate from legal risk scoring. Runs after clause_processing because
-    it needs both raw_sections (structural checks) and db_clauses
-    (duplicate/mandatory-clause checks)."""
+    """Deterministic authenticity check (Stage 2, no LLM) — the 7-factor,
+    entropy-fused Document Authenticity Index (see authenticity/),
+    deliberately separate from legal risk scoring. Runs after
+    clause_processing because it needs db_clauses (mandatory-clause and
+    semantic-consistency factors); reads the original file_path and
+    per-page text directly, since the digital-verification and
+    metadata-validation factors need the raw file, not just extracted
+    text, and the entity-verification factor needs page boundaries."""
     if state.get("error"):
         return {}
 
     full_text = "\n\n".join(f"{s['section_name']}\n{s['text_content']}" for s in state["raw_sections"])
     try:
-        result = assess_document_authenticity(
-            state["doc_name"], state["raw_sections"], state["db_clauses"], full_text,
-            document_type=state.get("document_type"),
-        )
-        crud.update_document_analysis(
-            state["doc_id"],
-            authenticity_score=result.authenticity_score,
-            authenticity_level=result.authenticity_level,
+        pages = crud.get_pages_for_document(state["doc_id"])
+        result = assess_and_persist_document_authenticity(
+            state["doc_id"], state["doc_name"], state["db_clauses"], full_text,
+            file_path=state.get("file_path"), pages=pages,
         )
         return {
             "authenticity_score": result.authenticity_score,
             "authenticity_level": result.authenticity_level,
-            "authenticity_warnings": result.fraud_indicators + result.missing_information,
+            "authenticity_warnings": result.evidence,
         }
     except Exception as e:
         logger.exception(f"Authenticity check failed (doc_id={state.get('doc_id')}): {e}")

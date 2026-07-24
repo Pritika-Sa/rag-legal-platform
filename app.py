@@ -1102,6 +1102,42 @@ if st.session_state.chat_open:
                 st.markdown(msg["content"])
                 if msg["role"] == "assistant" and "result_payload" in msg:
                     res = msg["result_payload"]
+
+                    # Hallucination check (agents/hallucination_agent.py via
+                    # agents/qa_agent.py) — post-processing display only,
+                    # beneath the answer. `res.hallucination` is None when no
+                    # answer was actually generated to check (e.g. no
+                    # relevant context found), in which case nothing renders
+                    # here at all.
+                    hallucination = getattr(res, "hallucination", None)
+                    if hallucination:
+                        if hallucination.get("trust_score") is None:
+                            st.code("Trust Score: Unknown\nHallucination Check: Failed", language=None)
+                        else:
+                            label_width = 18
+                            st.code(
+                                "------------------------------------\n"
+                                f"{'Trust Score':<{label_width}}{hallucination['trust_score']}%\n"
+                                f"{'Hallucination':<{label_width}}{hallucination['hallucination_score']}%\n"
+                                f"{'Confidence':<{label_width}}{hallucination['confidence']}%\n"
+                                f"{'Groundedness':<{label_width}}{hallucination['groundedness']}\n"
+                                f"{'Citation Quality':<{label_width}}{hallucination['citation_quality']}",
+                                language=None,
+                            )
+                            unsupported = hallucination.get("unsupported_statements") or []
+                            if unsupported:
+                                st.warning(
+                                    "⚠ Unsupported Claims\n"
+                                    + "\n".join(f"• {s}" for s in unsupported)
+                                )
+                            else:
+                                st.success("✅ No unsupported claims detected.")
+                            if (hallucination.get("hallucination_score") or 0) > 50:
+                                st.warning(
+                                    "⚠ This answer may contain information not fully supported "
+                                    "by the uploaded legal document."
+                                )
+
                     with st.expander("🔍 Citations"):
                         for sc in res.supporting_clauses:
                             st.markdown(f"- {sc}")

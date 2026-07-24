@@ -1,0 +1,7 @@
+{
+  "Loan Agreement": ["Payment", "Liability", "Jurisdiction", "Termination"],
+  "Non-Disclosure Agreement (NDA)": ["Confidentiality", "Termination", "Jurisdiction"],
+  "Employment Agreement": ["Payment", "Termination", "Confidentiality", "Compliance"],
+  "Lease Agreement": ["Payment", "Termination", "Jurisdiction"],
+  "Service Agreement": ["Payment", "Liability", "Termination", "Jurisdiction"]
+}

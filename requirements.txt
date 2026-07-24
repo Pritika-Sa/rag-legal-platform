@@ -29,3 +29,13 @@ scipy>=1.11.0
 # + dependency parsing. After installing, run once:
 #   python -m spacy download en_core_web_sm
 spacy>=3.8.0
+
+# authenticity/digital.py (Factor 5, Authenticity Verification Engine) —
+# QR/barcode presence + PDF signature-field presence. Field-presence
+# detection only, not cryptographic signature validation.
+pyzbar>=0.1.9
+pikepdf>=9.0.0
+
+# tests/test_authenticity_digital.py only — generates synthetic QR-code PDF
+# fixtures at test time, not used by application code.
+qrcode>=8.0

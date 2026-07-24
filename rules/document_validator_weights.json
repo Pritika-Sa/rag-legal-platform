@@ -1,0 +1,17 @@
+{
+  "_comment": "Per-check importance weights for authenticity/type_validators/ (Factor 8: document-type-specific validators). These are disclosed, cold-start defaults reflecting rough evidentiary importance (e.g. an arithmetic mismatch or a missing regulator registration is weighted higher than a missing receipt line), NOT tuned against any specific sample document. Recalibrate from a labelled dataset once one exists (same cold-start-then-calibrate posture as risk_engine/thresholds.py's Jenks fallback and fusion.py's entropy-weight shrinkage) -- until then, treat every weight below as a provisional, ablatable placeholder, not a settled constant. A check missing from this file falls back to weight 1.0 (see base.py::_load_weights).",
+  "Insurance Policy": {
+    "issuer_name": 8,
+    "policy_number": 10,
+    "policy_dates": 8,
+    "premium_values": 8,
+    "gst_arithmetic": 12,
+    "customer_identity_consistency": 10,
+    "vehicle_identifiers": 6,
+    "receipt_information": 6,
+    "qr_presence": 5,
+    "digital_signature_presence": 5,
+    "irdai_registration": 10,
+    "cross_page_consistency": 12
+  }
+}

@@ -1,38 +1,198 @@
 {
   "Termination": {
-    "keywords": ["terminate", "termination", "expiry", "expiration", "material breach", "cure period", "written notice"],
-    "regex": "\\bterminate\\b|\\btermination\\b|\\bexpiry\\b|\\bexpiration\\b|\\bbreach\\b"
+    "keywords": ["terminate", "termination", "expiry", "expiration", "material breach", "cure period", "written notice", "terminate for convenience", "termination for cause", "notice of termination", "early termination", "wind down", "cessation of services"],
+    "regex": "\\bterminate\\b|\\btermination\\b|\\bexpiry\\b|\\bexpiration\\b|\\bbreach\\b|\\bwind[\\s-]?down\\b|\\bcease\\s+to\\s+be\\s+effective\\b|\\bterminat(ing|ed)\\b"
   },
   "Liability": {
-    "keywords": ["liability", "limitation of liability", "liable", "cap", "indirect damages", "consequential damages", "special damages"],
-    "regex": "\\bliab(le|ility)\\b|\\blimit(ation)?\\s+of\\s+liability\\b|\\bconsequential\\s+damages\\b"
+    "keywords": ["liability", "limitation of liability", "liable", "cap", "indirect damages", "consequential damages", "special damages", "limitation of damages", "aggregate liability", "exclusion of liability", "punitive damages", "no event shall"],
+    "regex": "\\bliab(le|ility)\\b|\\blimit(ation)?\\s+of\\s+liability\\b|\\bconsequential\\s+damages\\b|\\bexclu(de|sion)\\s+of\\s+liability\\b|\\baggregate\\s+liability\\b|\\bpunitive\\s+damages\\b"
   },
   "Confidentiality": {
-    "keywords": ["confidential", "confidentiality", "non-disclosure", "nda", "proprietary information", "trade secret"],
-    "regex": "\\bconfidential(ity)?\\b|\\bnon-disclosure\\b|\\bproprietary\\b|\\bsecrets?\\b"
+    "keywords": ["confidential", "confidentiality", "non-disclosure", "nda", "proprietary information", "trade secret", "non-disclosure agreement", "confidential disclosure", "protected information", "restricted information"],
+    "regex": "\\bconfidential(ity)?\\b|\\bnon-disclosure\\b|\\bproprietary\\b|\\bsecrets?\\b|\\bnon-disclosure\\s+agreement\\b|\\brestricted\\s+information\\b|\\bprotected\\s+information\\b"
   },
   "Arbitration": {
-    "keywords": ["arbitration", "arbitrate", "arbitrator", "aaa", "jams", "binding", "dispute resolution"],
-    "regex": "\\barbitrat(e|ion|or)\\b|\\bdispute\\s+resolution\\b"
+    "keywords": ["arbitration", "arbitrate", "arbitrator", "aaa", "jams", "binding", "dispute resolution", "icc", "uncitral", "mediation", "final and binding", "arbitral tribunal"],
+    "regex": "\\barbitrat(e|ion|or)\\b|\\bdispute\\s+resolution\\b|\\bmediation\\b|\\bfinal\\s+and\\s+binding\\b|\\barbitral\\s+tribunal\\b|\\bicc\\b|\\buncitral\\b"
   },
   "Payment": {
-    "keywords": ["payment", "invoice", "fee", "price", "billing", "due date", "interest", "reimbursement"],
-    "regex": "\\bpay(ment)?s?\\b|\\binvoic(es?|ing)\\b|\\bfee(s)?\\b|\\bbill(ing)?\\b"
+    "keywords": ["payment", "invoice", "fee", "price", "billing", "due date", "interest", "reimbursement", "remuneration", "consideration", "wire transfer", "net 30", "late payment", "outstanding balance", "invoiced amount"],
+    "regex": "\\bpay(ment)?s?\\b|\\binvoic(es?|ing)\\b|\\bfee(s)?\\b|\\bbill(ing)?\\b|\\bremuneration\\b|\\bconsideration\\b|\\bwire\\s+transfer\\b|\\bnet\\s+\\d+\\b|\\boutstanding\\s+balance\\b"
   },
   "Indemnity": {
-    "keywords": ["indemnify", "indemnity", "indemnification", "hold harmless", "defend", "losses", "claims"],
-    "regex": "\\bindemni(fy|t|fication)\\b|\\bhold\\s+harmless\\b|\\bdefend\\b"
+    "keywords": ["indemnify", "indemnity", "indemnification", "hold harmless", "defend", "losses", "claims", "indemnitee", "indemnitor", "third-party claim", "hold-harmless", "liabilities arising"],
+    "regex": "\\bindemni(fy|t|fication)\\b|\\bhold\\s+harmless\\b|\\bdefend\\b|\\bindemnit(ee|or)\\b|\\bthird[\\s-]?party\\s+claims?\\b"
   },
   "Compliance": {
-    "keywords": ["compliance", "comply", "applicable laws", "regulations", "sanctions", "anti-corruption", "fcpa"],
-    "regex": "\\bcompli(ance|y|ied)\\b|\\bapplicable\\s+laws?\\b|\\bregulations?\\b"
+    "keywords": ["compliance", "comply", "applicable laws", "regulations", "sanctions", "anti-corruption", "fcpa", "regulatory requirements", "legal requirements", "governmental authority", "code of conduct", "aml", "kyc", "data protection laws"],
+    "regex": "\\bcompli(ance|y|ied)\\b|\\bapplicable\\s+laws?\\b|\\bregulations?\\b|\\bregulatory\\s+requirements?\\b|\\bgovernmental\\s+authority\\b|\\bcode\\s+of\\s+conduct\\b|\\baml\\b|\\bkyc\\b"
   },
   "Jurisdiction": {
-    "keywords": ["jurisdiction", "governing law", "venue", "forum", "courts of", "governed by", "state of"],
-    "regex": "\\bjurisdiction\\b|\\bgoverning\\s+law\\b|\\bvenue\\b|\\bforum\\b"
+    "keywords": ["jurisdiction", "governing law", "venue", "forum", "courts of", "governed by", "state of", "exclusive jurisdiction", "choice of law", "submit to the jurisdiction", "courts located in"],
+    "regex": "\\bjurisdiction\\b|\\bgoverning\\s+law\\b|\\bvenue\\b|\\bforum\\b|\\bchoice\\s+of\\s+law\\b|\\bexclusive\\s+jurisdiction\\b|\\bsubmit\\s+to\\s+the\\s+jurisdiction\\b"
   },
   "Force Majeure": {
-    "keywords": ["force majeure", "act of god", "natural disaster", "unforeseeable", "war", "strike", "riot", "fire"],
-    "regex": "\\bforce\\s+majeure\\b|\\bact\\s+of\\s+god\\b|\\bunforeseeable\\b"
+    "keywords": ["force majeure", "act of god", "natural disaster", "unforeseeable", "war", "strike", "riot", "fire", "pandemic", "epidemic", "government action", "beyond reasonable control", "acts of terrorism"],
+    "regex": "\\bforce\\s+majeure\\b|\\bact\\s+of\\s+god\\b|\\bunforeseeable\\b|\\bpandemic\\b|\\bepidemic\\b|\\bbeyond\\s+(its\\s+|their\\s+|the\\s+)?reasonable\\s+control\\b|\\bacts?\\s+of\\s+terrorism\\b"
+  },
+  "Assignment": {
+    "keywords": ["assign", "assignment", "assignable", "transfer of rights", "delegate", "successors and assigns", "novation"],
+    "regex": "\\bassign(s|ed|ment|able)?\\b|\\bnovation\\b|\\bsuccessors\\s+and\\s+assigns\\b|\\bdelegat(e|ion)\\b"
+  },
+  "Amendment": {
+    "keywords": ["amendment", "amend", "modification", "modify", "written consent of both parties", "supplement", "revise"],
+    "regex": "\\bamend(ment|ed|s)?\\b|\\bmodif(y|ication|ied)\\b|\\bsupplement(al)?\\b"
+  },
+  "Entire Agreement": {
+    "keywords": ["entire agreement", "integration clause", "supersedes", "entire understanding", "whole agreement", "merger clause"],
+    "regex": "\\bentire\\s+agreement\\b|\\bintegration\\s+clause\\b|\\bsupersede(s)?\\b|\\bwhole\\s+agreement\\b|\\bmerger\\s+clause\\b"
+  },
+  "Severability": {
+    "keywords": ["severability", "severable", "unenforceable provision", "invalid provision", "remainder shall remain"],
+    "regex": "\\bsever(ability|able)\\b|\\bunenforceable\\b|\\binvalid\\s+or\\s+unenforceable\\b|\\bremain(der|ing)\\s+provisions?\\b"
+  },
+  "Notices": {
+    "keywords": ["notice", "notices", "notify", "written notice", "delivered by hand", "registered mail", "certified mail", "email notice"],
+    "regex": "\\bnotices?\\b|\\bnotify\\b|\\bregistered\\s+mail\\b|\\bcertified\\s+mail\\b|\\bdeliver(ed|y)\\s+(by|to)\\b"
+  },
+  "Waiver": {
+    "keywords": ["waiver", "waive", "no waiver", "failure to enforce", "waived right"],
+    "regex": "\\bwaiv(er|e|ed)\\b|\\bfailure\\s+to\\s+enforce\\b|\\bno\\s+waiver\\b"
+  },
+  "Representations and Warranties": {
+    "keywords": ["represents and warrants", "representation", "warranty", "warrants that", "each party represents"],
+    "regex": "\\brepresent(s|ation)?\\s+and\\s+warrant(s|y|ies)?\\b|\\brepresents\\s+and\\s+warrants\\b|\\bwarrants?\\s+that\\b"
+  },
+  "Warranty Disclaimer": {
+    "keywords": ["as is", "disclaims all warranties", "no warranty", "without warranty", "merchantability", "fitness for a particular purpose"],
+    "regex": "\\bdisclaims?\\s+(all\\s+)?warrant(y|ies)\\b|\\bas[\\s-]is\\b|\\bmerchantability\\b|\\bfitness\\s+for\\s+a\\s+particular\\s+purpose\\b"
+  },
+  "Intellectual Property": {
+    "keywords": ["intellectual property", "copyright", "trademark", "patent", "trade secret", "ip rights", "work product", "license grant"],
+    "regex": "\\bintellectual\\s+property\\b|\\bcopyright(s)?\\b|\\btrademark(s)?\\b|\\bpatent(s)?\\b|\\bwork\\s+product\\b|\\blicense\\s+grant\\b"
+  },
+  "Restrictive Covenants": {
+    "keywords": ["non-compete", "non-competition", "non-solicitation", "non-circumvention", "restrictive covenant", "competing business", "solicit employees"],
+    "regex": "\\bnon[\\s-]?compet(e|ition)\\b|\\bnon[\\s-]?solicit(ation)?\\b|\\bnon[\\s-]?circumvent(ion)?\\b|\\brestrictive\\s+covenant\\b"
+  },
+  "Data Protection": {
+    "keywords": ["data protection", "personal data", "privacy policy", "gdpr", "data processing", "data subject", "data breach"],
+    "regex": "\\bdata\\s+protection\\b|\\bpersonal\\s+data\\b|\\bprivacy\\s+polic(y|ies)\\b|\\bgdpr\\b|\\bdata\\s+process(ing|or)\\b|\\bdata\\s+breach\\b"
+  },
+  "Insurance Requirements": {
+    "keywords": ["maintain insurance", "insurance coverage", "certificate of insurance", "additional insured", "general liability insurance", "workers compensation insurance"],
+    "regex": "\\bmaintain\\s+insurance\\b|\\bcertificate\\s+of\\s+insurance\\b|\\badditional\\s+insured\\b|\\bworkers[\\s']?\\s+compensation\\b|\\bgeneral\\s+liability\\s+insurance\\b"
+  },
+  "Independent Contractor": {
+    "keywords": ["independent contractor", "not an employee", "no employer-employee relationship", "self-employed"],
+    "regex": "\\bindependent\\s+contractor\\b|\\bnot\\s+an\\s+employee\\b|\\bemployer[\\s-]employee\\s+relationship\\b"
+  },
+  "Counterparts": {
+    "keywords": ["counterparts", "executed in counterparts", "duplicate originals", "facsimile signature", "electronic signature"],
+    "regex": "\\bcounterparts?\\b|\\bduplicate\\s+originals?\\b|\\belectronic\\s+signature\\b|\\bfacsimile\\s+signature\\b"
+  },
+  "Survival": {
+    "keywords": ["survival", "survive termination", "survive expiration", "shall survive"],
+    "regex": "\\bsurviv(al|e|es|ed)\\b|\\bshall\\s+survive\\b"
+  },
+  "Third-Party Beneficiaries": {
+    "keywords": ["third-party beneficiary", "no third party rights", "no third-party beneficiaries"],
+    "regex": "\\bthird[\\s-]?party\\s+benefici(ary|aries)\\b|\\bno\\s+third[\\s-]?party\\s+rights\\b"
+  },
+  "Audit Rights": {
+    "keywords": ["audit", "right to audit", "inspect records", "books and records", "audit rights"],
+    "regex": "\\baudit(s|ing)?\\b|\\bright\\s+to\\s+audit\\b|\\binspect\\s+records\\b|\\bbooks\\s+and\\s+records\\b"
+  },
+  "Coverage and Scope": {
+    "keywords": ["coverage", "covered loss", "scope of coverage", "insured event", "sum insured", "policy limits", "insuring clause"],
+    "regex": "\\bcoverage\\b|\\bcovered\\s+(loss|event|peril)\\b|\\bsum\\s+insured\\b|\\bpolicy\\s+limits?\\b|\\binsuring\\s+clause\\b"
+  },
+  "Premium": {
+    "keywords": ["premium", "premium payment", "premium due", "grace period", "premium amount"],
+    "regex": "\\bpremium(s)?\\b|\\bgrace\\s+period\\b"
+  },
+  "Deductible and Exclusions": {
+    "keywords": ["deductible", "exclusion", "excluded loss", "not covered", "policy exclusions"],
+    "regex": "\\bdeductible(s)?\\b|\\bexclu(sion|ded)s?\\b|\\bnot\\s+covered\\b"
+  },
+  "Claims Procedure": {
+    "keywords": ["claim", "claims procedure", "notice of claim", "proof of loss", "file a claim", "claims adjuster"],
+    "regex": "\\bclaims?\\b|\\bproof\\s+of\\s+loss\\b|\\bclaims?\\s+adjuster\\b|\\bfile\\s+a\\s+claim\\b"
+  },
+  "Beneficiary Designation": {
+    "keywords": ["beneficiary", "named beneficiary", "beneficiary designation", "policyholder", "insured party"],
+    "regex": "\\bbenefici(ary|aries)\\b|\\bpolicyholder\\b|\\binsured\\s+part(y|ies)\\b"
+  },
+  "Policy Period and Renewal": {
+    "keywords": ["policy period", "effective date", "renewal", "policy term", "expiration date of the policy"],
+    "regex": "\\bpolicy\\s+(period|term)\\b|\\brenewal\\b|\\beffective\\s+date\\b"
+  },
+  "Cancellation": {
+    "keywords": ["cancellation", "cancel the policy", "right to cancel", "cancellation notice", "non-renewal"],
+    "regex": "\\bcancel(lation|led|s)?\\b|\\bnon[\\s-]?renewal\\b"
+  },
+  "Subrogation": {
+    "keywords": ["subrogation", "subrogate", "right of subrogation", "waiver of subrogation"],
+    "regex": "\\bsubrogat(ion|e)\\b"
+  },
+  "Compensation and Benefits": {
+    "keywords": ["salary", "wages", "compensation", "bonus", "benefits", "base pay", "annual salary", "employee benefits"],
+    "regex": "\\bsalary\\b|\\bwages\\b|\\bcompensation\\b|\\bbonus(es)?\\b|\\bbase\\s+pay\\b|\\bemployee\\s+benefits\\b"
+  },
+  "Rent and Lease Payments": {
+    "keywords": ["rent", "monthly rent", "rental payment", "lease payment", "rent due"],
+    "regex": "\\brent(al)?\\b|\\blease\\s+payment\\b|\\brent\\s+due\\b"
+  },
+  "Security Deposit": {
+    "keywords": ["security deposit", "deposit refund", "damage deposit", "return of deposit"],
+    "regex": "\\bsecurity\\s+deposit\\b|\\bdamage\\s+deposit\\b|\\breturn\\s+of\\s+(the\\s+)?deposit\\b"
+  },
+  "Maintenance and Repairs": {
+    "keywords": ["maintenance", "repairs", "upkeep", "landlord shall maintain", "tenant shall maintain", "condition of premises"],
+    "regex": "\\bmaintenance\\b|\\brepairs?\\b|\\bupkeep\\b|\\bcondition\\s+of\\s+(the\\s+)?premises\\b"
+  },
+  "Delivery and Risk of Loss": {
+    "keywords": ["delivery", "risk of loss", "shipping terms", "fob", "title passes", "delivery date"],
+    "regex": "\\bdelivery\\b|\\brisk\\s+of\\s+loss\\b|\\bshipping\\s+terms\\b|\\bfob\\b|\\btitle\\s+passes\\b"
+  },
+  "Inspection and Acceptance": {
+    "keywords": ["inspection", "acceptance", "reject the goods", "acceptance testing", "inspect and accept"],
+    "regex": "\\binspection\\b|\\bacceptance\\b|\\breject(ed|ion)?\\s+(the\\s+)?goods\\b|\\bacceptance\\s+testing\\b"
+  },
+  "Interest and Fees": {
+    "keywords": ["interest rate", "annual percentage rate", "apr", "late fee", "penalty interest", "default interest"],
+    "regex": "\\binterest\\s+rate\\b|\\bannual\\s+percentage\\s+rate\\b|\\bapr\\b|\\bdefault\\s+interest\\b|\\blate\\s+fee\\b"
+  },
+  "Collateral and Security Interest": {
+    "keywords": ["collateral", "security interest", "lien", "pledge", "secured party", "encumbrance"],
+    "regex": "\\bcollateral\\b|\\bsecurity\\s+interest\\b|\\blien(s)?\\b|\\bpledge(d)?\\b|\\bencumbrance(s)?\\b"
+  },
+  "Covenants": {
+    "keywords": ["affirmative covenant", "negative covenant", "financial covenant", "covenant to", "borrower shall"],
+    "regex": "\\bcovenant(s)?\\b|\\baffirmative\\s+covenant\\b|\\bnegative\\s+covenant\\b|\\bfinancial\\s+covenant\\b"
+  },
+  "Events of Default": {
+    "keywords": ["event of default", "default", "acceleration", "cross-default", "cure period", "remedies upon default"],
+    "regex": "\\bevent(s)?\\s+of\\s+default\\b|\\bdefault(ed|s)?\\b|\\bacceleration\\b|\\bcross[\\s-]?default\\b"
+  },
+  "Capital Contribution": {
+    "keywords": ["capital contribution", "contribute capital", "initial contribution", "additional contribution", "capital account"],
+    "regex": "\\bcapital\\s+contribution(s)?\\b|\\bcapital\\s+account\\b"
+  },
+  "Profit and Loss Allocation": {
+    "keywords": ["profit and loss", "profits and losses", "distribution of profits", "allocation of profits", "share of profits", "loss allocation"],
+    "regex": "\\bprofit(s)?\\s+and\\s+loss(es)?\\b|\\ballocation\\s+of\\s+profits?\\b|\\bdistribution\\s+of\\s+profits?\\b"
+  },
+  "Dissolution and Withdrawal": {
+    "keywords": ["dissolution", "withdrawal of a partner", "winding up", "dissolve the partnership", "exit of a partner"],
+    "regex": "\\bdissolution\\b|\\bdissolve(d)?\\b|\\bwinding\\s+up\\b|\\bwithdrawal\\s+of\\s+(a\\s+)?partner\\b"
+  },
+  "Relationship of Parties": {
+    "keywords": ["relationship of the parties", "independent parties", "no partnership", "no joint venture", "no agency"],
+    "regex": "\\brelationship\\s+of\\s+the\\s+parties\\b|\\bno\\s+(partnership|joint\\s+venture|agency)\\s+is\\s+created\\b|\\bindependent\\s+parties\\b"
+  },
+  "Dispute Resolution": {
+    "keywords": ["dispute resolution", "mediation", "litigation", "negotiate in good faith", "escalation procedure", "resolve disputes"],
+    "regex": "\\bdispute\\s+resolution\\b|\\bmediation\\b|\\blitigation\\b|\\bnegotiate\\s+in\\s+good\\s+faith\\b|\\bresolve\\s+disputes?\\b"
   }
 }

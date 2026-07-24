@@ -187,9 +187,185 @@ SECTION_PATTERNS = [
 
 SECTION_HEADING_MAX_CHARS = 80
 
+# Title-Case headings that include a lowercase connector word ("Conditions
+# of Coverage", "Notice of Cancellation", "Limitation of Use", "Waiver of
+# Subrogation") fail SECTION_PATTERNS[3] above because it requires every
+# word to start uppercase -- extremely common in insurance-policy section
+# titles specifically. Checked word-by-word instead of one regex so the
+# connector-word set stays easy to extend.
+_TITLE_CASE_CONNECTOR_WORDS = {
+    "of", "and", "the", "in", "for", "to", "on", "by", "with", "or",
+    "a", "an", "as", "under", "per", "at", "from",
+}
+
+
+def _is_title_case_with_connectors(line: str) -> bool:
+    words = line.split()
+    if not (2 <= len(words) <= 8):
+        return False
+    if line.endswith((".", ",", ";")):
+        return False
+    if not words[0][:1].isupper() or not words[-1][:1].isupper():
+        return False
+    for word in words:
+        cleaned = word.strip(":-").replace("'", "")
+        if not cleaned or not cleaned.isalpha():
+            return False
+        if cleaned.lower() in _TITLE_CASE_CONNECTOR_WORDS:
+            continue
+        if not cleaned[0].isupper():
+            return False
+    return True
+
 
 def _is_section_heading(line: str) -> bool:
-    return len(line) < SECTION_HEADING_MAX_CHARS and any(p.match(line) for p in SECTION_PATTERNS)
+    if len(line) >= SECTION_HEADING_MAX_CHARS:
+        return False
+    return any(p.match(line) for p in SECTION_PATTERNS) or _is_title_case_with_connectors(line)
+
+
+def _table_row_to_text(header: List[Optional[str]], row: List[Optional[str]]) -> str:
+    """Turns one table row into a readable clause-candidate sentence, e.g.
+    header ["Coverage", "Sum Insured", "Premium"] + row ["Own Damage",
+    "500000", "12000"] -> "Coverage: Own Damage. Sum Insured: 500000.
+    Premium: 12000." Falls back to plain cell-joining when there's no usable
+    header (single-column schedules, label/value pairs with no header row)."""
+    has_header = bool(header) and any(h and str(h).strip() for h in header)
+    if has_header:
+        pairs = [
+            f"{_strip_cid_garbage(str(h)).strip()}: {_strip_cid_garbage(str(c)).strip()}"
+            for h, c in zip(header, row)
+            if h and str(h).strip() and c and str(c).strip()
+        ]
+        pairs = [p for p in pairs if p.strip(": .")]
+        if pairs:
+            return ". ".join(pairs) + "."
+    cells = [_strip_cid_garbage(str(c)).strip() for c in row if c and str(c).strip()]
+    return "; ".join(c for c in cells if c)
+
+
+def _extract_page_tables(page, page_num: int) -> tuple:
+    """Finds every table on a pdfplumber page and returns
+    (table_sections, table_bboxes): one clause-candidate section PER ROW
+    (per the requirement that table rows -- not whole tables -- become
+    clause text), plus each table's bounding box so the caller can exclude
+    that region from the page's plain-text extraction and avoid extracting
+    the same content twice. Cells are extracted with a tight x_tolerance for
+    the same reason _reconstruct_text_from_words exists below: pdfplumber's
+    default cell-text extraction glues adjacent words together on PDFs with
+    unusual glyph spacing (observed on real insurer-issued policy PDFs),
+    e.g. "RegistrationNumber" instead of "Registration Number"."""
+    table_sections: List[Dict[str, Any]] = []
+    table_bboxes: List[tuple] = []
+    try:
+        tables = page.find_tables()
+    except Exception:
+        return table_sections, table_bboxes
+
+    for t_idx, table in enumerate(tables):
+        try:
+            data = table.extract(x_tolerance=1)
+        except Exception:
+            continue
+        if not data:
+            continue
+        table_bboxes.append(table.bbox)
+
+        header = data[0] if len(data) > 1 else []
+        has_header = len(data) > 1 and any(h and str(h).strip() for h in header)
+        data_rows = data[1:] if has_header else data
+
+        for row in data_rows:
+            text = _table_row_to_text(header if has_header else [], row)
+            if len(text) < 8:
+                continue
+            table_sections.append({
+                "section_name": f"Policy Schedule Table {t_idx + 1} (Page {page_num})",
+                "text_content": text,
+                "page_num": page_num,
+            })
+    return table_sections, table_bboxes
+
+
+# Unmapped glyph placeholders pdfplumber emits for characters it can't
+# resolve to Unicode (fonts with no usable ToUnicode CMap -- seen on real
+# insurer-issued PDFs, typically in decorative header glyphs). Pure noise:
+# stripped so it doesn't pollute heading/keyword matching on the readable
+# text immediately following it on the same line.
+_CID_GARBAGE_RE = re.compile(r'(?:\(cid:\d+\))+')
+
+
+def _strip_cid_garbage(text: str) -> str:
+    return _CID_GARBAGE_RE.sub('', text)
+
+
+def _reconstruct_text_from_words(words: List[dict]) -> str:
+    """Rebuilds line-broken text from pdfplumber word boxes instead of
+    page.extract_text(), which on some PDFs (unusual glyph spacing, seen on
+    real insurer-issued policy PDFs) glues adjacent words together with no
+    space at all -- e.g. "RegisteredandHeadOffice:BajajAllianzHouse" --
+    silently defeating almost every downstream keyword/regex match.
+    extract_words() detects word boundaries from the actual glyph gaps,
+    independent of that heuristic, so grouping those boxes back into lines
+    by vertical position recovers proper spacing."""
+    if not words:
+        return ""
+    ordered = sorted(words, key=lambda w: (round(w["top"]), w["x0"]))
+    lines: List[List[dict]] = []
+    current_top = None
+    current_words: List[dict] = []
+    for w in ordered:
+        top = w["top"]
+        if current_top is not None and abs(top - current_top) > 3:
+            lines.append(current_words)
+            current_words = []
+            current_top = None
+        if current_top is None:
+            current_top = top
+        current_words.append(w)
+    if current_words:
+        lines.append(current_words)
+
+    text_lines = []
+    for line_words in lines:
+        line_words.sort(key=lambda w: w["x0"])
+        line_text = _strip_cid_garbage(" ".join(w["text"] for w in line_words)).strip()
+        if line_text:
+            text_lines.append(line_text)
+    return "\n".join(text_lines)
+
+
+def _page_text_excluding_tables(page, table_bboxes: List[tuple]) -> str:
+    """Extracts a page's readable text with table regions filtered out (so
+    table content isn't captured twice -- once here, once cleanly via
+    _extract_page_tables) and word-glyph gaps reconstructed into real
+    spaces via _reconstruct_text_from_words. Falls back to plain
+    page.extract_text() if word-level extraction raises or yields nothing,
+    so this can only improve extraction quality, never regress it."""
+    target_page = page
+    if table_bboxes:
+        def _outside_all_tables(obj):
+            return not any(
+                bbox[0] <= obj["x0"] and obj["x1"] <= bbox[2] and bbox[1] <= obj["top"] and obj["bottom"] <= bbox[3]
+                for bbox in table_bboxes
+            )
+        try:
+            target_page = page.filter(_outside_all_tables)
+        except Exception:
+            target_page = page
+
+    try:
+        words = target_page.extract_words(x_tolerance=1, y_tolerance=3)
+        text = _reconstruct_text_from_words(words)
+        if text:
+            return text
+    except Exception:
+        pass
+
+    try:
+        return target_page.extract_text() or ""
+    except Exception:
+        return page.extract_text() or ""
 
 
 def parse_document(file_path: str) -> List[Dict[str, Any]]:
@@ -230,25 +406,32 @@ def parse_document(file_path: str) -> List[Dict[str, Any]]:
             current_page = 1
             with pdfplumber.open(file_path) as pdf:
                 for page_idx, page in enumerate(pdf.pages):
-                    text = page.extract_text()
-                    if not text:
-                        continue
-                    for line in text.split("\n"):
-                        line_str = line.strip()
-                        if not line_str:
-                            continue
-                        if _is_section_heading(line_str):
-                            if current_content:
-                                sections.append({
-                                    "section_name": current_section,
-                                    "text_content": "\n".join(current_content).strip(),
-                                    "page_num": current_page
-                                })
-                            current_section = line_str
-                            current_content = []
-                            current_page = page_idx + 1
-                        else:
-                            current_content.append(line_str)
+                    page_num = page_idx + 1
+                    # Tables (policy schedules, coverage/premium breakdowns, etc.)
+                    # are pulled out row-by-row *before* plain-text extraction,
+                    # and their regions excluded from that extraction, so table
+                    # content is captured cleanly exactly once instead of being
+                    # flattened/garbled into ordinary prose lines or skipped.
+                    table_sections, table_bboxes = _extract_page_tables(page, page_num)
+                    text = _page_text_excluding_tables(page, table_bboxes)
+                    if text:
+                        for line in text.split("\n"):
+                            line_str = line.strip()
+                            if not line_str:
+                                continue
+                            if _is_section_heading(line_str):
+                                if current_content:
+                                    sections.append({
+                                        "section_name": current_section,
+                                        "text_content": "\n".join(current_content).strip(),
+                                        "page_num": current_page
+                                    })
+                                current_section = line_str
+                                current_content = []
+                                current_page = page_num
+                            else:
+                                current_content.append(line_str)
+                    sections.extend(table_sections)
             if current_content:
                 sections.append({
                     "section_name": current_section,

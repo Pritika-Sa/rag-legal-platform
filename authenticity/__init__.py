@@ -6,17 +6,17 @@
 #   Stage 0 (document type + confidence) -> services/document_classifier.py
 #                                            ::classify_document_type_ranked
 #   Factor 1 (structure validation)       -> authenticity/structure.py
-#   Factor 2 (clause completeness)        -> not yet built
-#   Factor 3 (cross-field consistency)    -> not yet built
-#   Factor 4 (entity verification)        -> not yet built
-#   Factor 5 (digital verification)       -> not yet built
-#   Factor 6 (metadata validation)        -> not yet built
-#   Factor 7 (semantic consistency)       -> not yet built
-#   Fusion (Document Authenticity Index)  -> not yet built
+#   Factor 2 (clause completeness)        -> authenticity/clauses.py
+#   Factor 3 (cross-field consistency)    -> authenticity/cross_field.py
+#   Factor 4 (entity verification)        -> authenticity/entities.py
+#   Factor 5 (digital verification)       -> authenticity/digital.py
+#   Factor 6 (metadata validation)        -> authenticity/metadata.py
+#   Factor 7 (semantic consistency)       -> authenticity/semantic.py
+#   Fusion (Document Authenticity Index)  -> authenticity/dai.py
 #
-# Deliberately not wired into agents/authenticity_agent.py or
-# agents/orchestrator.py until every factor exists and is tested — the
-# live pipeline keeps using the current (flawed but working) authenticity
-# checker until this package is a complete, verified replacement, the same
-# staging discipline used for risk_engine/ before it replaced
-# agents/rule_engine.score_risk_points().
+# All 7 factors + fusion are built and tested. Deliberately not yet wired
+# into agents/authenticity_agent.py or agents/orchestrator.py — the live
+# pipeline keeps using the current (flawed but working) deduction-based
+# authenticity checker until this package has been wired in and verified
+# end-to-end against the live pipeline, the same staging discipline used
+# for risk_engine/ before it replaced agents/rule_engine.score_risk_points().

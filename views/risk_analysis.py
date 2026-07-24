@@ -75,6 +75,31 @@ CATEGORY_CONTEXT = {
     "Ambiguity": "This clause carries ambiguity risk — vague or hedged language makes its obligations harder to predict or enforce.",
 }
 
+# Display name + icon for each Document Authenticity Index factor
+# (authenticity/ package) — keyed by the same names
+# agents/authenticity_agent.py uses in AuthenticityResult.factors. The
+# original 7 generic factors plus the additive, document-type-specific
+# "document_type_validator" factor (authenticity/type_validators/) — an
+# unrecognized name still renders fine via .get(name, ("•", name)) below.
+AUTHENTICITY_FACTOR_DISPLAY = {
+    "structure": ("📐", "Document Structure"),
+    "clause_completeness": ("📋", "Mandatory Clauses"),
+    "cross_field": ("🔗", "Cross-Field Consistency"),
+    "entity_verification": ("👥", "Entity Verification"),
+    "digital_verification": ("🔏", "Digital Verification"),
+    "metadata_validation": ("🗂️", "Metadata Validation"),
+    "semantic_consistency": ("🧭", "Semantic Consistency"),
+    "document_type_validator": ("🧾", "Document-Type Checks"),
+}
+
+AUTHENTICITY_LEVEL_COLORS = {
+    "Authentic": "#00CC96",
+    "Likely Authentic": "#00CC96",
+    "Suspicious": "#FECB52",
+    "Highly Suspicious": "#EF553B",
+    "Insufficient Signal": "#888888",
+}
+
 # Plain-English reason each risk-increasing phrase actually matters — not
 # just that it was "found", but what it does to your exposure. Covers every
 # escalating (positive-point) phrase in rules/risk_rules.json and
@@ -220,6 +245,19 @@ def _highlight(text):
     )
 
 
+def _factor_score_color(score):
+    """Purely cosmetic bucketing for the factor-breakdown progress bars —
+    not a scoring decision (the factor's own continuous score, computed in
+    authenticity/, is unaffected by these display-only cut points)."""
+    if score is None:
+        return "#888888"
+    if score >= 0.7:
+        return "#00CC96"
+    if score >= 0.4:
+        return "#FECB52"
+    return "#EF553B"
+
+
 def render_toggle(flag_key: str, button_key: str, label: str) -> bool:
     """Plain text-link toggle (not a boxed CTA button) — swaps its own label
     between "<label>" and "Hide <label>" instead of using an arrow icon, so
@@ -296,16 +334,93 @@ def render():
 
         a_score = active_doc.get("authenticity_score")
         a_level = active_doc.get("authenticity_level", "Unknown")
-        a_color = "#00CC96" if a_level == "Authentic" else "#FECB52" if a_level == "Suspicious" else "#EF553B"
+        a_color = AUTHENTICITY_LEVEL_COLORS.get(a_level, "#888888")
 
-        stat_cols = st.columns([0.01, 1])
-        if False:  # Authenticity is still calculated and stored; it is intentionally hidden from the UI.
+        stat_cols = st.columns(2)
+        with stat_cols[0]:
             st.markdown(
                 render_metric_card("Authenticity Score", f"{a_score}/100" if a_score is not None else "—", "🔍", accent=a_color),
                 unsafe_allow_html=True,
             )
             if a_score is not None:
                 st.markdown(f"<div style='text-align:center; margin-top:6px;'>{render_badge(a_level.upper(), a_color)}</div>", unsafe_allow_html=True)
+
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+            run_recompute_authenticity = st.button(
+                "🔄 Recompute Authenticity", key=f"recompute_authenticity_btn_{doc_id}", width="stretch",
+            )
+            st.caption("Runs the current 7-factor engine fresh — rule-based, no LLM call. Use this for "
+                       "documents processed before this engine went live (no factor breakdown below yet).")
+            if run_recompute_authenticity:
+                with st.spinner("Recomputing authenticity (7-factor check)…"):
+                    try:
+                        from agents.authenticity_agent import assess_and_persist_document_authenticity
+                        full_text = "\n\n".join(
+                            f"{c.get('section_name') or ''}\n{c.get('text_content') or ''}" for c in clauses
+                        )
+                        pages = crud.get_pages_for_document(doc_id)
+                        assess_and_persist_document_authenticity(
+                            doc_id, doc_name, clauses, full_text,
+                            file_path=active_doc.get("path"), pages=pages,
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to recompute authenticity: {e}")
+
+            a_factors = active_doc.get("authenticity_factors")
+            if a_factors:
+                st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+                if render_toggle(f"authenticity_breakdown_expanded_{doc_id}", f"btn_authenticity_breakdown_{doc_id}", "🔍 Authenticity Factor Breakdown"):
+                    a_doc_type = active_doc.get("authenticity_document_type")
+                    a_doc_type_conf = active_doc.get("authenticity_document_type_confidence")
+                    a_confidence = active_doc.get("authenticity_confidence")
+                    with st.container(border=True, key="authenticity_breakdown_card"):
+                        meta_bits = []
+                        if a_doc_type:
+                            conf_str = f" ({a_doc_type_conf:.0%} confidence)" if a_doc_type_conf is not None else ""
+                            meta_bits.append(f"**Detected type:** {a_doc_type}{conf_str}")
+                        if a_confidence is not None:
+                            meta_bits.append(f"**Overall confidence:** {a_confidence:.0f}/100")
+                        if meta_bits:
+                            st.caption("  ·  ".join(meta_bits))
+
+                        for factor in a_factors:
+                            name = factor.get("name", "")
+                            icon, display_name = AUTHENTICITY_FACTOR_DISPLAY.get(name, ("•", name))
+                            applicable = factor.get("applicable")
+                            score = factor.get("score")
+                            weight = factor.get("weight")
+                            evidence = factor.get("evidence") or []
+
+                            row_cols = st.columns([2, 3, 1])
+                            with row_cols[0]:
+                                st.markdown(f"**{icon} {display_name}**")
+                            with row_cols[1]:
+                                if applicable and score is not None:
+                                    pct = max(0.0, min(1.0, score)) * 100
+                                    bar_color = _factor_score_color(score)
+                                    st.markdown(
+                                        f"<div style='background:rgba(136,136,136,0.2); border-radius:6px; "
+                                        f"height:10px; margin-top:8px;'>"
+                                        f"<div style='background:{bar_color}; width:{pct:.0f}%; height:10px; "
+                                        f"border-radius:6px;'></div></div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                else:
+                                    st.caption("Not applicable to this document")
+                            with row_cols[2]:
+                                if applicable and score is not None:
+                                    st.markdown(f"<div style='text-align:right;'>{score:.0%}</div>", unsafe_allow_html=True)
+                                    if weight is not None:
+                                        st.caption(f"weight {weight:.0%}")
+                                else:
+                                    st.markdown("<div style='text-align:right;'>—</div>", unsafe_allow_html=True)
+
+                            if applicable and evidence:
+                                st.caption(evidence[0])
+                            elif not applicable and evidence:
+                                st.caption(f"ℹ️ {evidence[0]}")
+                            st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
         with stat_cols[1]:
             with st.container(border=True, key="quick_estimate_card"):
                 st.markdown(

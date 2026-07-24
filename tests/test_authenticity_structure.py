@@ -56,40 +56,47 @@ class HighConfidenceTemplateTests(unittest.TestCase):
         self.assertIn("Found: Policy Number", joined)
 
 
-class LowConfidenceBlendingTests(unittest.TestCase):
-    def test_zero_confidence_classification_uses_generic_template_only(self):
-        classification = classify_document_type_ranked(AMBIGUOUS_TEXT)
-        self.assertAlmostEqual(classification.confidence, 0.0, places=4)
-
-        result = assess_structure(AMBIGUOUS_TEXT, classification)
-        generic_only = assess_structure(AMBIGUOUS_TEXT, DocumentTypeClassification(
-            document_type=GENERIC_MINIMAL_KEY, confidence=0.0,
-        ))
-        # At c=0 the blend collapses entirely onto the generic template's
-        # own fractional score for the same text.
-        generic_direct_score = None
-        from authenticity.structure import _check_template, _fraction, _normalize
-        f, m = _check_template(_normalize(AMBIGUOUS_TEXT), GENERIC_MINIMAL_KEY)
-        generic_direct_score = _fraction(f, m)
-        self.assertAlmostEqual(result.score, generic_direct_score, places=4)
-        self.assertIn("Blended 0% weight on the type-specific template", " ".join(result.evidence))
-
-    def test_confidence_between_0_and_1_produces_a_true_blend(self):
-        # A synthetic mid-confidence classification over real insurance
-        # text should land strictly between the pure type-specific score
-        # and the pure generic score, not equal either endpoint.
+class ScoreConfidenceDecouplingTests(unittest.TestCase):
+    # Reworked 2026-07-20: classification confidence used to blend the
+    # SCORE toward the generic template as confidence dropped -- a
+    # perfectly-structured Insurance Policy would score lower purely
+    # because the type classifier itself was uncertain, conflating "what
+    # type is this" with "is it well organized." The score is now the
+    # type-specific template's own fraction at full weight whenever a
+    # template is registered, regardless of classification confidence;
+    # only CONFIDENCE (not score) still reflects classification confidence.
+    def test_low_confidence_classification_does_not_lower_the_structure_score(self):
         from authenticity.structure import _check_template, _fraction, _normalize
         normalized = _normalize(GOOD_INSURANCE_POLICY)
         type_found, type_missing = _check_template(normalized, "Insurance Policy")
         type_score = _fraction(type_found, type_missing)
-        generic_found, generic_missing = _check_template(normalized, GENERIC_MINIMAL_KEY)
-        generic_score = _fraction(generic_found, generic_missing)
-        self.assertNotAlmostEqual(type_score, generic_score, places=2)  # test is only meaningful if these differ
 
-        mid_confidence = DocumentTypeClassification(document_type="Insurance Policy", confidence=0.5)
-        result = assess_structure(GOOD_INSURANCE_POLICY, mid_confidence)
-        expected = 0.5 * type_score + 0.5 * generic_score
-        self.assertAlmostEqual(result.score, expected, places=4)
+        low_confidence = DocumentTypeClassification(document_type="Insurance Policy", confidence=0.1)
+        high_confidence = DocumentTypeClassification(document_type="Insurance Policy", confidence=0.95)
+
+        low_result = assess_structure(GOOD_INSURANCE_POLICY, low_confidence)
+        high_result = assess_structure(GOOD_INSURANCE_POLICY, high_confidence)
+
+        # Same score either way -- the score is the type-specific template's
+        # own fraction, independent of how confident the classification was.
+        self.assertAlmostEqual(low_result.score, type_score, places=4)
+        self.assertAlmostEqual(high_result.score, type_score, places=4)
+        self.assertAlmostEqual(low_result.score, high_result.score, places=4)
+
+    def test_classification_confidence_still_moves_confidence_not_score(self):
+        low_confidence = DocumentTypeClassification(document_type="Insurance Policy", confidence=0.1)
+        high_confidence = DocumentTypeClassification(document_type="Insurance Policy", confidence=0.95)
+        low_result = assess_structure(GOOD_INSURANCE_POLICY, low_confidence)
+        high_result = assess_structure(GOOD_INSURANCE_POLICY, high_confidence)
+
+        self.assertAlmostEqual(low_result.score, high_result.score, places=4)
+        self.assertLess(low_result.confidence, high_result.confidence)
+
+    def test_evidence_explains_the_decoupling(self):
+        classification = DocumentTypeClassification(document_type="Insurance Policy", confidence=0.3)
+        result = assess_structure(GOOD_INSURANCE_POLICY, classification)
+        joined = " ".join(result.evidence)
+        self.assertIn("not the structure score itself", joined)
 
 
 class NoTemplateFallbackTests(unittest.TestCase):
@@ -115,6 +122,54 @@ class NoTemplateFallbackTests(unittest.TestCase):
         result = assess_structure("", classification)
         self.assertAlmostEqual(result.score, 0.0)
         self.assertEqual(result.found_sections, [])
+
+
+class SectionNumberingSignalTests(unittest.TestCase):
+    def test_non_decreasing_numbering_scores_full(self):
+        classification = classify_document_type_ranked(GOOD_INSURANCE_POLICY)
+        clauses = [
+            {"section_name": "1. Policy Number"}, {"section_name": "2. Sum Assured"}, {"section_name": "3. Premium"},
+        ]
+        result = assess_structure(GOOD_INSURANCE_POLICY, classification, clauses=clauses)
+        self.assertEqual(result.section_numbering_score, 1.0)
+        self.assertTrue(any("consistent, non-decreasing" in e for e in result.evidence))
+
+    def test_out_of_order_numbering_scores_zero_and_lowers_overall_score(self):
+        classification = classify_document_type_ranked(GOOD_INSURANCE_POLICY)
+        ordered_clauses = [{"section_name": "1. A"}, {"section_name": "2. B"}, {"section_name": "3. C"}]
+        broken_clauses = [{"section_name": "1. A"}, {"section_name": "5. B"}, {"section_name": "2. C"}]
+        ordered_result = assess_structure(GOOD_INSURANCE_POLICY, classification, clauses=ordered_clauses)
+        broken_result = assess_structure(GOOD_INSURANCE_POLICY, classification, clauses=broken_clauses)
+        self.assertEqual(broken_result.section_numbering_score, 0.0)
+        self.assertLess(broken_result.score, ordered_result.score)
+
+    def test_fewer_than_two_numbered_sections_is_not_checkable(self):
+        classification = classify_document_type_ranked(GOOD_INSURANCE_POLICY)
+        result = assess_structure(GOOD_INSURANCE_POLICY, classification, clauses=[{"section_name": "Preamble"}])
+        self.assertIsNone(result.section_numbering_score)
+        self.assertTrue(any("Section numbering: not checkable" in e for e in result.evidence))
+
+
+class PageContinuitySignalTests(unittest.TestCase):
+    def test_contiguous_pages_score_full(self):
+        classification = classify_document_type_ranked(GOOD_INSURANCE_POLICY)
+        pages = [{"page_number": i, "raw_text": "x"} for i in (1, 2, 3)]
+        result = assess_structure(GOOD_INSURANCE_POLICY, classification, pages=pages)
+        self.assertEqual(result.page_continuity_score, 1.0)
+
+    def test_gap_in_pages_lowers_continuity_and_overall_score(self):
+        classification = classify_document_type_ranked(GOOD_INSURANCE_POLICY)
+        contiguous_pages = [{"page_number": i, "raw_text": "x"} for i in (1, 2, 3)]
+        gapped_pages = [{"page_number": i, "raw_text": "x"} for i in (1, 2, 4)]  # page 3 missing
+        contiguous_result = assess_structure(GOOD_INSURANCE_POLICY, classification, pages=contiguous_pages)
+        gapped_result = assess_structure(GOOD_INSURANCE_POLICY, classification, pages=gapped_pages)
+        self.assertAlmostEqual(gapped_result.page_continuity_score, 0.75, places=4)
+        self.assertLess(gapped_result.score, contiguous_result.score)
+
+    def test_single_page_is_not_checkable(self):
+        classification = classify_document_type_ranked(GOOD_INSURANCE_POLICY)
+        result = assess_structure(GOOD_INSURANCE_POLICY, classification, pages=[{"page_number": 1, "raw_text": "x"}])
+        self.assertIsNone(result.page_continuity_score)
 
 
 if __name__ == "__main__":

@@ -5,203 +5,168 @@ complete, well-formed legal document in the first place. A fabricated
 document with bland, low-risk-sounding clauses would score "low risk" and
 still be fake — the two scores must never be blended.
 
-Every check below is a concrete regex/heuristic with an explicit point
-deduction, so results are explainable to an examiner. The fake-address
-check is intentionally a warning only, never a scored deduction — regex
-cannot verify a real-world address exists, and overselling that capability
-would be dishonest.
+This is the live entry point for the entropy-fused Document Authenticity
+Index (see authenticity/) — replaces the old fixed-deduction scorer (flat
+-20/-15/-10 points per failed check) the same way risk_engine/ replaced
+agents.rule_engine.score_risk_points(): the old implementation is deleted
+outright, not kept alongside the new one. Combines the original 7 generic
+factors with an additive 8th layer of document-type-specific evidence
+checks (authenticity/type_validators/) — the 7-factor pipeline itself is
+unchanged; the 8th factor is simply not applicable for document types that
+don't have a specific validator registered yet.
+
+Each factor is called defensively (_safe()) — a single factor
+crashing (a malformed file, a spaCy edge case) degrades that one factor to
+"not applicable" rather than sinking the whole authenticity assessment,
+since authenticity.dai.assess_document_authenticity already treats
+not-applicable factors as "no evidence" and excludes them from fusion
+rather than penalizing the document for them.
 """
 
-import re
-from difflib import SequenceMatcher
+import logging
 from typing import Any, Dict, List, Optional
+from types import SimpleNamespace
 
 from pydantic import BaseModel, Field
 
-from agents.knowledge_graph_agent import PARTY_RE
-from agents.rule_engine import CLAUSE_RULES, extract_dates, extract_section_refs
+from authenticity.clauses import assess_clause_completeness
+from authenticity.cross_field import assess_cross_field_consistency
+from authenticity.dai import assess_document_authenticity as _fuse_authenticity_factors
+from authenticity.digital import assess_digital_verification
+from authenticity.entities import assess_entity_verification
+from authenticity.metadata import assess_metadata_validation
+from authenticity.semantic import assess_semantic_consistency
+from authenticity.structure import assess_structure
+from authenticity.type_validators import assess_document_type_validators
+from database import crud
+from services.document_classifier import classify_document_type_ranked
 
-_SIGNATURE_RE = re.compile(r"\b(signature|signed|/s/|authorized representative)\b", re.IGNORECASE)
-_EXECUTION_RE = re.compile(r"IN\s+WITNESS\s+WHEREOF", re.IGNORECASE)
-_WITNESS_RE = re.compile(r"\bwitness(es)?\b", re.IGNORECASE)
-_BETWEEN_AND_RE = re.compile(r"\bBETWEEN\b.{0,200}?\bAND\b", re.IGNORECASE | re.DOTALL)
-_LEADING_NUM_RE = re.compile(r"^(\d+)(?:\.\d+)*")
-_PO_BOX_RE = re.compile(r"P\.?O\.?\s*Box\s*\d+", re.IGNORECASE)
-_POSTAL_CODE_RE = re.compile(r"\b\d{5,6}\b")
+logger = logging.getLogger(__name__)
 
-# document_type values that conventionally require a witness. Matched
-# exactly against services.document_classifier's output — "Affidavit" and
-# "Will" are classifier categories, so this check is active for those;
-# "Deed" doesn't match the classifier's "Sale Deed" category exactly, so
-# that one stays dormant unless a document is literally typed "Deed".
-WITNESS_REQUIRED_TYPES = {"Deed", "Affidavit", "Will"}
 
-MIN_REALISTIC_CHARS = 500
-
-DEDUCTIONS = {
-    "missing_signatures": 20,
-    "missing_execution_section": 15,
-    "missing_witnesses": 10,
-    "missing_dates": 15,
-    "missing_party_names": 20,
-    "broken_numbering": 10,
-    "missing_governing_law": 10,
-    "unrealistic_formatting": 15,
-    "dangling_references": 10,
-    "empty_mandatory_clauses": 10,
-    "duplicate_clauses": 10,
-}
+class FactorSummary(BaseModel):
+    name: str
+    applicable: bool
+    score: Optional[float] = Field(default=None, description="0-1. None when not applicable.")
+    confidence: float = 0.0
+    weight: Optional[float] = Field(default=None, description="Fusion weight, 0-1. None when not applicable (excluded from fusion).")
+    evidence: List[str] = Field(default_factory=list)
 
 
 class AuthenticityResult(BaseModel):
-    authenticity_score: int = Field(description="0-100, 100 = fully authentic-looking")
-    authenticity_level: str = Field(description="'Authentic', 'Suspicious', or 'Highly Suspicious'")
-    fraud_indicators: List[str] = Field(default_factory=list, description="Hard findings that reduced the score")
-    missing_information: List[str] = Field(default_factory=list, description="Expected content that was not found")
-    warnings: List[str] = Field(default_factory=list, description="Soft, low-confidence signals — never scored")
+    authenticity_score: int = Field(description="0-100, 100 = fully authentic-looking (rounded DAI)")
+    authenticity_level: str = Field(description="'Authentic' / 'Likely Authentic' / 'Suspicious' / 'Highly Suspicious' / 'Insufficient Signal'")
+    confidence: float = Field(description="0-100")
+    document_type: str
+    document_type_confidence: float = Field(description="0-1, Stage 0 classification confidence")
+    factors: List[FactorSummary] = Field(default_factory=list)
+    evidence: List[str] = Field(default_factory=list, description="Document-level fusion evidence: which factors were combined/skipped")
 
 
-def _tail(full_text: str, fraction: float, min_chars: int = 400) -> str:
-    """Last `fraction` of the document, but never less than `min_chars` —
-    a pure percentage window is too small for short (or short test) documents
-    to reliably catch a closing signature/execution block."""
-    if not full_text:
-        return ""
-    window = max(int(len(full_text) * fraction), min_chars)
-    return full_text[-window:]
+def _safe(name: str, fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        logger.exception(f"Authenticity factor '{name}' failed; treating as not applicable for this document.")
+        return SimpleNamespace(
+            applicable=False, score=0.0, confidence=0.0,
+            evidence=[f"Factor '{name}' failed to compute and was excluded from this document's score."],
+        )
 
 
-def _check_signatures(full_text: str) -> bool:
-    return bool(_SIGNATURE_RE.search(_tail(full_text, 0.2)))
+def assess_document_authenticity(
+    doc_name: str,
+    clauses: List[Dict[str, Any]],
+    full_text: str,
+    file_path: Optional[str] = None,
+    pages: Optional[List[Dict[str, Any]]] = None,
+) -> AuthenticityResult:
+    classification = classify_document_type_ranked(full_text)
 
+    # Computed before the dict below (not inline) so the new document-type-
+    # validator layer can reuse this factor's QR/signature-field findings
+    # instead of re-scanning the PDF a second time.
+    digital_result = _safe("digital_verification", assess_digital_verification, file_path)
 
-def _check_execution_section(full_text: str) -> bool:
-    return bool(_EXECUTION_RE.search(_tail(full_text, 0.25)))
+    factor_results = {
+        # clauses/pages threaded through (2026-07-20) so structure can also
+        # score section-numbering order and cross-page continuity, not just
+        # section presence — see authenticity/structure.py.
+        "structure": _safe("structure", assess_structure, full_text, classification, clauses, pages or []),
+        "clause_completeness": _safe("clause_completeness", assess_clause_completeness, clauses, classification),
+        "cross_field": _safe("cross_field", assess_cross_field_consistency, full_text, classification),
+        "entity_verification": _safe("entity_verification", assess_entity_verification, pages or []),
+        "digital_verification": digital_result,
+        "metadata_validation": _safe("metadata_validation", assess_metadata_validation, file_path),
+        # document_type threaded through (2026-07-20) purely for
+        # explainability text ("Structured Insurance Policy detected...") —
+        # the structured-vs-prose branching itself is driven by the
+        # document's own measured prose/field-clause ratio, never by this
+        # type name, so no per-type logic is duplicated here.
+        "semantic_consistency": _safe(
+            "semantic_consistency", assess_semantic_consistency, clauses, classification.document_type,
+        ),
+        # Factor 8, additive on top of the original 7 (see authenticity/type_validators/):
+        # deterministic, document-type-specific evidence checks (e.g. GST
+        # arithmetic and IRDAI registration for an Insurance Policy) that have
+        # no equivalent in the 7 generic factors above. Reports
+        # applicable=False (not a penalty) for any document type without a
+        # registered validator yet.
+        "document_type_validator": _safe(
+            "document_type_validator", assess_document_type_validators,
+            classification.document_type, full_text, pages or [], clauses, digital_result,
+        ),
+    }
 
+    dai_result = _fuse_authenticity_factors(factor_results)
+    weight_by_name = {c.name: c.weight for c in dai_result.contributions}
 
-def _check_party_names(full_text: str) -> bool:
-    return bool(PARTY_RE.search(full_text)) or bool(_BETWEEN_AND_RE.search(full_text))
-
-
-def _check_numbering(raw_sections: List[Dict[str, Any]]) -> bool:
-    """Returns True if numbering is broken (decreasing or repeated)."""
-    seen = []
-    for sec in raw_sections:
-        match = _LEADING_NUM_RE.match(sec.get("section_name", "").strip())
-        if not match:
-            continue
-        num = int(match.group(1))
-        if seen and (num < seen[-1] or num in seen):
-            return True
-        seen.append(num)
-    return False
-
-
-def _check_dangling_references(raw_sections: List[Dict[str, Any]], full_text: str) -> bool:
-    known_numbers = set()
-    for sec in raw_sections:
-        match = _LEADING_NUM_RE.match(sec.get("section_name", "").strip())
-        if match:
-            known_numbers.add(match.group(1))
-    for ref in extract_section_refs(full_text):
-        ref_num_match = re.search(r"(\d+)", ref)
-        if ref_num_match and ref_num_match.group(1) not in known_numbers:
-            return True
-    return False
-
-
-def _check_duplicate_clauses(clauses: List[Dict[str, Any]]) -> bool:
-    texts = [c.get("text_content", "") for c in clauses if c.get("text_content")]
-    for i in range(len(texts)):
-        for j in range(i + 1, len(texts)):
-            if SequenceMatcher(None, texts[i], texts[j]).ratio() > 0.9:
-                return True
-    return False
-
-
-def _check_fake_address(full_text: str) -> bool:
-    """Low-confidence signal only: a PO-Box-only address with no nearby
-    postal-code-shaped token. Regex cannot verify a real-world address
-    exists — this is a heuristic warning, not a fraud claim."""
-    for match in _PO_BOX_RE.finditer(full_text):
-        window = full_text[max(0, match.start() - 60):match.end() + 60]
-        if not _POSTAL_CODE_RE.search(window):
-            return True
-    return False
-
-
-def assess_document_authenticity(doc_name: str, raw_sections: List[Dict[str, Any]],
-                                  clauses: List[Dict[str, Any]], full_text: str,
-                                  document_type: Optional[str] = None) -> AuthenticityResult:
-    fraud_indicators: List[str] = []
-    missing_information: List[str] = []
-    warnings: List[str] = []
-    deductions_applied = 0
-
-    if not _check_signatures(full_text):
-        fraud_indicators.append("No signature block detected near the end of the document.")
-        deductions_applied += DEDUCTIONS["missing_signatures"]
-
-    if not _check_execution_section(full_text):
-        fraud_indicators.append("No execution section ('IN WITNESS WHEREOF' or equivalent) detected.")
-        deductions_applied += DEDUCTIONS["missing_execution_section"]
-
-    if document_type in WITNESS_REQUIRED_TYPES:
-        if not _WITNESS_RE.search(full_text):
-            fraud_indicators.append(f"Document type '{document_type}' conventionally requires witnesses, none detected.")
-            deductions_applied += DEDUCTIONS["missing_witnesses"]
-    elif not _WITNESS_RE.search(full_text):
-        warnings.append("No witness references found (not necessarily required for this document type).")
-
-    if not extract_dates(full_text):
-        fraud_indicators.append("No dates found anywhere in the document.")
-        deductions_applied += DEDUCTIONS["missing_dates"]
-
-    if not _check_party_names(full_text):
-        fraud_indicators.append("No identifiable party names found (no defined-term or 'BETWEEN...AND' preamble pattern).")
-        deductions_applied += DEDUCTIONS["missing_party_names"]
-
-    if _check_numbering(raw_sections):
-        fraud_indicators.append("Section numbering is out of order or repeated.")
-        deductions_applied += DEDUCTIONS["broken_numbering"]
-
-    jurisdiction_keywords = CLAUSE_RULES.get("Jurisdiction", {}).get("keywords", [])
-    if not any(kw in full_text.lower() for kw in jurisdiction_keywords):
-        missing_information.append("No governing law / jurisdiction clause detected.")
-        deductions_applied += DEDUCTIONS["missing_governing_law"]
-
-    if len(full_text) < MIN_REALISTIC_CHARS or len(raw_sections) <= 1:
-        fraud_indicators.append("Document is unrealistically short or shows no real internal structure.")
-        deductions_applied += DEDUCTIONS["unrealistic_formatting"]
-
-    if _check_dangling_references(raw_sections, full_text):
-        fraud_indicators.append("Contains section references that don't match any section in the document.")
-        deductions_applied += DEDUCTIONS["dangling_references"]
-
-    if _check_fake_address(full_text):
-        warnings.append("A PO-Box-only address without a nearby postal code was found — a weak, unverified signal, not proof of a fake address.")
-
-    classifications = {c.get("classification") for c in clauses}
-    if "Termination" not in classifications and "Jurisdiction" not in classifications:
-        missing_information.append("Neither a Termination nor a Jurisdiction clause was found.")
-        deductions_applied += DEDUCTIONS["empty_mandatory_clauses"]
-
-    if _check_duplicate_clauses(clauses):
-        fraud_indicators.append("Near-duplicate clause text found across two or more clauses.")
-        deductions_applied += DEDUCTIONS["duplicate_clauses"]
-
-    authenticity_score = max(0, 100 - deductions_applied)
-    if authenticity_score >= 70:
-        authenticity_level = "Authentic"
-    elif authenticity_score >= 40:
-        authenticity_level = "Suspicious"
-    else:
-        authenticity_level = "Highly Suspicious"
+    factors = [
+        FactorSummary(
+            name=name,
+            applicable=result.applicable,
+            score=round(float(result.score), 4) if result.applicable else None,
+            confidence=result.confidence,
+            weight=weight_by_name.get(name),
+            evidence=result.evidence,
+        )
+        for name, result in factor_results.items()
+    ]
 
     return AuthenticityResult(
-        authenticity_score=authenticity_score,
-        authenticity_level=authenticity_level,
-        fraud_indicators=fraud_indicators,
-        missing_information=missing_information,
-        warnings=warnings,
+        authenticity_score=round(dai_result.dai_score),
+        authenticity_level=dai_result.authenticity_level,
+        confidence=dai_result.confidence,
+        document_type=classification.document_type,
+        document_type_confidence=classification.confidence,
+        factors=factors,
+        evidence=dai_result.evidence,
     )
+
+
+def assess_and_persist_document_authenticity(
+    doc_id: int,
+    doc_name: str,
+    clauses: List[Dict[str, Any]],
+    full_text: str,
+    file_path: Optional[str] = None,
+    pages: Optional[List[Dict[str, Any]]] = None,
+) -> AuthenticityResult:
+    """Runs assess_document_authenticity() and persists every field the
+    Risk Analysis page's factor-breakdown toggle reads, in one place, so
+    agents/orchestrator.py's authenticity_check_node (automatic, at
+    ingestion) and views/risk_analysis.py's on-demand "Recompute
+    Authenticity" button (for documents ingested before this engine went
+    live, or whenever a fresh read is wanted) can't drift out of sync on
+    which fields get saved."""
+    result = assess_document_authenticity(doc_name, clauses, full_text, file_path=file_path, pages=pages)
+    crud.update_document_analysis(
+        doc_id,
+        authenticity_score=result.authenticity_score,
+        authenticity_level=result.authenticity_level,
+        authenticity_confidence=result.confidence,
+        authenticity_document_type=result.document_type,
+        authenticity_document_type_confidence=result.document_type_confidence,
+        authenticity_factors=[f.model_dump() for f in result.factors],
+    )
+    return result
