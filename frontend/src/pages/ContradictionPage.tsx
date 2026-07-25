@@ -1,0 +1,77 @@
+import { Alert, Box, Button, CircularProgress, Stack, Typography } from "@mui/material";
+import { ContradictionCard } from "../components/contradiction/ContradictionCard";
+import { PageHeader } from "../components/common/PageHeader";
+import { useContradictionsQuery, useReanalyzeContradictionsMutation } from "../hooks/useContradictions";
+import { useActiveDocumentStore } from "../store/activeDocumentStore";
+
+// Direct port of views/contradiction.py::render(). The one-time AI pass on
+// first visit and the backfill-forces-redo logic both happen server-side
+// (api/routers/contradictions.py), so this page just renders whatever GET
+// returns and offers the same "Re-analyze with AI" button.
+export function ContradictionPage() {
+  const { activeDocId, activeDocName } = useActiveDocumentStore();
+  const contradictionsQuery = useContradictionsQuery(activeDocId);
+  const reanalyzeMutation = useReanalyzeContradictionsMutation(activeDocId ?? -1);
+
+  const contradictions = reanalyzeMutation.data ?? contradictionsQuery.data ?? [];
+
+  return (
+    <>
+      <PageHeader
+        icon="⚖️"
+        title="Contradiction & Inconsistency Finder"
+        subtitle="Identifies conflicting statements, inconsistent obligations, and contradictory terms within the document."
+        badge="Agent 5"
+        docName={activeDocName}
+      />
+
+      {!activeDocId && (
+        <Alert severity="warning">Please select an active document in the sidebar to review contradictions.</Alert>
+      )}
+
+      {activeDocId && contradictionsQuery.isLoading && (
+        <Box sx={{ textAlign: "center", py: 6 }}>
+          <CircularProgress />
+          <Typography variant="body2" sx={{ mt: 2, opacity: 0.7, maxWidth: 480, mx: "auto" }}>
+            Agent 5 is running a one-time deeper AI check for this document — grouping clauses, checking
+            numeric/date/entity mismatches, and verifying semantically similar pairs with AI. Future visits to this
+            page will load instantly.
+          </Typography>
+        </Box>
+      )}
+
+      {activeDocId && contradictionsQuery.isError && (
+        <Alert severity="error">Failed to load contradictions for this document.</Alert>
+      )}
+
+      {activeDocId && contradictionsQuery.isSuccess && (
+        <>
+          <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+            {contradictions.length > 0 ? (
+              <Typography variant="h6">
+                Found <strong>{contradictions.length}</strong> internal conflicts:
+              </Typography>
+            ) : (
+              <Alert severity="success" sx={{ flexGrow: 1, mr: 2 }}>
+                ✅ No conflicting clauses or internal contradictions were detected in this agreement!
+              </Alert>
+            )}
+            <Button
+              variant="outlined"
+              onClick={() => reanalyzeMutation.mutate()}
+              loading={reanalyzeMutation.isPending}
+            >
+              🔄 Re-analyze with AI
+            </Button>
+          </Stack>
+
+          {reanalyzeMutation.isError && <Alert severity="error" sx={{ mb: 2 }}>Failed to re-analyze this document.</Alert>}
+
+          {contradictions.map((c) => (
+            <ContradictionCard key={c.id} contradiction={c} />
+          ))}
+        </>
+      )}
+    </>
+  );
+}

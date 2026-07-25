@@ -1,3 +1,7 @@
+# DEPRECATED (2026-07-25): superseded by the React + FastAPI frontend
+# (frontend/, api/) built during the Streamlit-to-React migration. This file
+# and views/ are left fully intact and runnable — nothing below is disabled
+# or modified — pending a decision on when to retire them.
 import os
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)

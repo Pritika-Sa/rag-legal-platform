@@ -28,3 +28,7 @@ vectorstore/chroma_db/
 # OS files
 .DS_Store
 Thumbs.db
+
+# React frontend (migration)
+frontend/node_modules/
+frontend/dist/

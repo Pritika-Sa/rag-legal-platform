@@ -1,0 +1,8 @@
+# Additive to the project's root requirements.txt (untouched) — installs only
+# what the FastAPI transport/adapter layer itself needs. fastapi/uvicorn/
+# python-multipart/pydantic are already present in this environment; pinned
+# here anyway so a clean install pulls the full adapter dependency set.
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+pyjwt>=2.9.0
