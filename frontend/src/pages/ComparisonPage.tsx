@@ -37,7 +37,6 @@ export function ComparisonPage() {
         icon="🔀"
         title="Comparison Center"
         subtitle="Select two agreements to analyze structural differences, clause variations, and potential vulnerabilities between them. This module keeps its own document selection and never changes your globally active document."
-        badge="Agent 10"
       />
 
       {documentsQuery.isSuccess && documents.length < 2 && (

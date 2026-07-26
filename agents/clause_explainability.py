@@ -21,7 +21,7 @@ import re
 from typing import Any, Dict, List
 
 from agents.clause_identifier_agent import MIN_CONFIDENCE
-from agents.rule_engine import CLAUSE_RULES, detect_clause_type
+from agents.rule_engine import CLAUSE_RULES, detect_clause_type, matched_keywords
 
 __all__ = ["explain_clause_detection", "detect_clause_types_multilabel"]
 
@@ -38,17 +38,21 @@ def _score_category(text_lower: str, first_line_lower: str, clause_type: str, ru
     """Same scoring formula as agents.rule_engine.detect_clause_type's inner
     loop, but returns the full evidence trace for one category instead of
     just a number, so both explain_clause_detection and
-    detect_clause_types_multilabel can share one implementation."""
-    matched_keywords = [kw for kw in rules["keywords"] if kw in text_lower]
+    detect_clause_types_multilabel can share one implementation. Keyword
+    matching delegates to rule_engine.matched_keywords (Sprint 4B,
+    word-boundary-anchored) rather than re-implementing its own substring
+    check, so this module can never silently disagree with
+    detect_clause_type about what counts as a match."""
+    matched_kws = matched_keywords(clause_type, text_lower)
     regex_match = re.search(rules["regex"], text_lower)
     heading_bonus = 0.15 if clause_type.lower() in first_line_lower else 0.0
-    score = min(1.0, round(0.25 * bool(regex_match) + 0.10 * min(len(matched_keywords), 5) + heading_bonus, 2))
+    score = min(1.0, round(0.25 * bool(regex_match) + 0.10 * min(len(matched_kws), 5) + heading_bonus, 2))
 
     reason_parts = []
     if regex_match:
         reason_parts.append(f'regex matched "{regex_match.group(0)}"')
-    if matched_keywords:
-        reason_parts.append(f"{len(matched_keywords)} keyword(s) matched: {', '.join(matched_keywords)}")
+    if matched_kws:
+        reason_parts.append(f"{len(matched_kws)} keyword(s) matched: {', '.join(matched_kws)}")
     reason = (
         f"Classified as '{clause_type}' because " + "; ".join(reason_parts)
         if reason_parts
@@ -58,7 +62,7 @@ def _score_category(text_lower: str, first_line_lower: str, clause_type: str, ru
     return {
         "clause_type": clause_type,
         "confidence": score,
-        "matched_keywords": matched_keywords,
+        "matched_keywords": matched_kws,
         "matched_regex": regex_match.group(0) if regex_match else None,
         "regex_pattern": rules["regex"],
         "reason": reason,

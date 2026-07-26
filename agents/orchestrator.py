@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, END
 logger = logging.getLogger(__name__)
 
 from agents.parser_agent import parse_document, parse_document_pages, enforce_chunk_bounds
-from agents.clause_identifier_agent import identify_clauses
+from agents.clause_identifier_agent import STRUCTURED_FIELD_TYPE, identify_clauses
 from agents.importance_agent import assess_clause_importance
 from agents.analyzer_agent import assess_clauses_batch
 from agents.risk_scoring_agent import assess_document_risk
@@ -50,6 +50,46 @@ class AgentState(TypedDict):
     authenticity_warnings: List[str]
 
 
+# 2026-07-27 clause-extraction fix: agents/clause_identifier_agent.py already
+# tags table-row/form-field content as classification="Structured Field"
+# (STRUCTURED_FIELD_TYPE) rather than discarding it -- that mechanism was
+# built specifically to stop silently dropping this content, not to route it
+# differently downstream. Nothing ever read the label: risk scoring, RAG
+# indexing, contradiction detection, and the dependency/knowledge-graph nodes
+# were all treating every policy-schedule table row (Policy Number, Engine
+# Number, IDV, Nominee Name, ...) as if it were a legal clause. This helper
+# is the single filter used at every one of those call sites below.
+#
+# Deliberately NOT applied to: `identified`/`db_clauses` themselves (kept
+# unfiltered for persistence and UI display -- structured fields remain
+# fully visible via the existing classification filter), the
+# len(identified) < 3 parsing-quality-warning check (answers "did
+# segmentation run at all", not "how many legal clauses exist"),
+# authenticity_check_node (the 8-factor authenticity engine's own
+# structure/semantic_consistency factors specifically rely on seeing this
+# content to detect tabular documents and adapt their scoring -- filtering
+# it out here would regress that already-tuned behavior), and
+# audit_agent_node (document-level narrative summary, not clause-level
+# analysis).
+def _is_legal_clause(clause: Dict[str, Any]) -> bool:
+    return clause.get("classification") != STRUCTURED_FIELD_TYPE
+
+
+def _structured_field_risk_fields() -> Dict[str, Any]:
+    """Risk-field values assigned to a structured/metadata field instead of
+    running it through risk scoring — distinct from "None" earned by a
+    genuinely low-risk real clause, and distinct from the "Unknown"/"Error
+    analyzing risk" fallback used when risk scoring itself fails."""
+    return {
+        "risk_level": "None",
+        "risk_category": "Not Applicable",
+        "risk_score": None,
+        "confidence": None,
+        "dimension_breakdown": [],
+        "explanation": "Not analyzed for legal risk — this is a structured/metadata field, not a legal clause.",
+    }
+
+
 def get_file_hash(file_path):
     hasher = hashlib.md5()
     with open(file_path, 'rb') as f:
@@ -80,6 +120,55 @@ def parse_document_node(state: AgentState) -> Dict[str, Any]:
                 "raw_sections": raw_sections, "error": ""}
     except Exception as e:
         return {"error": f"Parsing failed: {str(e)}"}
+
+
+def _run_lrsi_debug_logging(state, db_clauses, *, document_type, full_text,
+                             document_risk_score, document_risk_level, raw_sections) -> None:
+    """Builds and writes the Sprint 1 debug JSONL + human-readable report
+    for one document. Only called when LRSI_DEBUG is set — see
+    clause_processing_node. Entirely read-only against the scoring
+    pipeline: every value here is either already on `db_clauses`/`state`
+    or comes from a pure, standalone helper in debug/lrsi_debug_logger.py.
+    """
+    from debug import lrsi_debug_logger as dbg
+    from services.document_classifier import classify_document_type_ranked
+
+    clause_records = [dbg.clause_debug_record(c) for c in db_clauses]
+    funnel = dbg.analyze_extraction_funnel(full_text)
+    chunk_info = dbg.count_chunked_sections(raw_sections)
+    type_conf = classify_document_type_ranked(full_text).confidence
+
+    threshold_registry = None
+    try:
+        from agents.analyzer_agent import _get_threshold_registry
+        threshold_registry = _get_threshold_registry()
+    except Exception:
+        pass
+
+    doc_summary = dbg.document_summary_record(
+        {"name": state.get("doc_name"), "document_type": document_type,
+         "document_risk_score": document_risk_score, "document_risk_level": document_risk_level},
+        clause_records,
+        document_type_confidence=type_conf,
+        n_raw_blocks=funnel["n_raw_blocks"],
+        n_chunked_sections=chunk_info["n_chunked_sections"],
+        clause_thresholds=threshold_registry.clause_thresholds().cuts if threshold_registry else None,
+        document_thresholds=threshold_registry.document_thresholds().cuts if threshold_registry else None,
+        threshold_provenance={
+            "clause_is_data_derived": threshold_registry.clause_thresholds().is_data_derived,
+            "document_is_data_derived": threshold_registry.document_thresholds().is_data_derived,
+        } if threshold_registry else None,
+    )
+    contributors = dbg.top_contributors(clause_records, n=10)
+
+    out_dir = os.path.join("debug_output")
+    os.makedirs(out_dir, exist_ok=True)
+    doc_id = state.get("doc_id")
+    jsonl_path = os.path.join(out_dir, f"doc_{doc_id}.jsonl")
+    report_path = os.path.join(out_dir, f"doc_{doc_id}_report.txt")
+    dbg.write_jsonl(jsonl_path, doc_summary, clause_records, contributors, funnel)
+    dbg.render_human_readable(jsonl_path, out_path=report_path)
+    logger.info(f"LRSI debug output written: {jsonl_path}, {report_path}")
 
 
 def clause_processing_node(state: AgentState) -> Dict[str, Any]:
@@ -149,15 +238,24 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
             c["importance_score"] = 0
             c["importance_category"] = "Informational"
 
-    # Risk scoring runs as one batch call across every clause in the
+    # Risk scoring runs as one batch call across every LEGAL clause in the
     # document, not per-clause inside the loop above: the Hybrid
     # Explainable Risk Engine's entropy-weighted dimension fusion (see
     # risk_engine/fusion.py) is a document-level statistic — scoring one
     # clause in isolation can't produce it. This replaces the old
     # per-clause analyze_clause()/score_risk_points() keyword scorer.
+    #
+    # 2026-07-27: structured/metadata fields (Policy Number, IDV, Nominee
+    # Name, ...) are excluded from the batch entirely rather than scored and
+    # discarded — the Hybrid Risk Engine's fusion is a document-level
+    # statistic over the clauses it's given, so table-row noise diluting
+    # that population was itself part of the reported bug, not just a
+    # cosmetic per-clause label issue.
+    legal_clauses = [c for c in identified if _is_legal_clause(c)]
+    structured_field_clauses = [c for c in identified if not _is_legal_clause(c)]
     try:
-        risk_results, _document_risk_assessment = assess_clauses_batch(identified)
-        for c, result in zip(identified, risk_results):
+        risk_results, document_risk_assessment = assess_clauses_batch(legal_clauses)
+        for c, result in zip(legal_clauses, risk_results):
             c["risk_level"] = result.risk_level
             c["risk_category"] = result.risk_category
             c["risk_score"] = result.risk_score
@@ -166,13 +264,21 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
             c["explanation"] = result.explanation
     except Exception as e:
         logger.exception(f"Batch risk assessment failed (doc_id={state.get('doc_id')}): {e}")
-        for c in identified:
+        document_risk_assessment = None
+        for c in legal_clauses:
             c["risk_level"] = "None"
             c["risk_category"] = "Unknown"
             c["risk_score"] = None
             c["confidence"] = None
             c["dimension_breakdown"] = []
             c["explanation"] = "Error analyzing risk"
+
+    # Structured fields never enter risk scoring at all (see above) — given
+    # an explicit "not applicable" state rather than left with no risk
+    # fields, and distinct from "None" earned by a genuinely low-risk real
+    # clause or from the error-fallback "Unknown" above.
+    for c in structured_field_clauses:
+        c.update(_structured_field_risk_fields())
 
     clause_ids = crud.add_clauses_bulk(state["doc_id"], identified)
     db_clauses = []
@@ -186,9 +292,14 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
         sec["document_type"] = doc_type
         db_clauses.append(sec)
 
+    # Document-level risk aggregation and RAG indexing both run on the
+    # LEGAL subset only (same rationale as the batch risk scoring above) —
+    # db_clauses itself stays unfiltered for persistence/display/authenticity.
+    legal_db_clauses = [c for c in db_clauses if _is_legal_clause(c)]
+
     document_risk_score, document_risk_level, document_risk_recommendations = 0, "Low", ""
     try:
-        doc_risk = assess_document_risk(state["doc_name"], db_clauses)
+        doc_risk = assess_document_risk(state["doc_name"], legal_db_clauses)
         crud.add_audit_log("document_risk",
                            f"Doc {state['doc_id']} scored {doc_risk.risk_score}/100 ({doc_risk.risk_level})")
         document_risk_score = doc_risk.risk_score
@@ -197,7 +308,7 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
     except Exception:
         pass
 
-    chroma_client.add_clauses_to_vectorstore(db_clauses)
+    chroma_client.add_clauses_to_vectorstore(legal_db_clauses)
 
     crud.update_document_analysis(
         state["doc_id"],
@@ -207,6 +318,19 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
         document_risk_score=document_risk_score,
         document_risk_level=document_risk_level,
     )
+
+    # Sprint 1 LRSI debugging framework (see debug/lrsi_debug_logger.py) —
+    # off by default (LRSI_DEBUG env var), read-only, never touches scoring.
+    from debug.lrsi_debug_logger import is_debug_enabled
+    if is_debug_enabled():
+        try:
+            _run_lrsi_debug_logging(
+                state, db_clauses, document_type=doc_type, full_text=full_text,
+                document_risk_score=document_risk_score, document_risk_level=document_risk_level,
+                raw_sections=raw_sections,
+            )
+        except Exception:
+            logger.exception(f"LRSI debug logging failed (doc_id={state.get('doc_id')}) — non-fatal")
 
     return {
         "identified_clauses": identified,
@@ -260,7 +384,11 @@ def contradiction_detection_node(state: AgentState) -> Dict[str, Any]:
     if state.get("error"):
         return {}
     try:
-        contradictions = find_contradictions(state["db_clauses"], use_llm=False)
+        # 2026-07-27: structured/metadata fields excluded -- comparing two
+        # policy-schedule table rows' label:value text as if they were
+        # competing legal provisions produced meaningless "contradictions".
+        legal_clauses = [c for c in state["db_clauses"] if _is_legal_clause(c)]
+        contradictions = find_contradictions(legal_clauses, use_llm=False)
         contradiction_ids = crud.replace_contradictions_for_document(state["doc_id"], contradictions)
         saved_contradictions = [
             {"id": c_id, "severity": item.severity}
@@ -283,14 +411,22 @@ def graph_and_impact_node(state: AgentState) -> Dict[str, Any]:
     if state.get("error"):
         return {}
 
-    high_risk_clauses = [c for c in state["db_clauses"] if c.get("risk_level") == "High"]
+    # 2026-07-27: structured/metadata fields excluded from impact analysis,
+    # knowledge-graph extraction, and dependency detection -- a policy
+    # schedule's table rows have no legal "impact" or "dependency" to
+    # analyze, and build_document_graph creates one graph node per clause,
+    # so leaving them in cluttered the Knowledge Graph page with dozens of
+    # "Policy Schedule Table N" nodes carrying no real relationship data.
+    legal_clauses = [c for c in state["db_clauses"] if _is_legal_clause(c)]
+
+    high_risk_clauses = [c for c in legal_clauses if c.get("risk_level") == "High"]
     for c in high_risk_clauses[:2]:
         try:
             analyze_clause_impact(c.get("section_name", "Clause"), c["text_content"])
         except Exception:
             pass
 
-    full_text = "\n".join([c['text_content'] for c in state["db_clauses"]][:5])
+    full_text = "\n".join([c['text_content'] for c in legal_clauses][:5])
     kg_data = {"nodes": [], "edges": []}
     try:
         kg_data = extract_knowledge_graph(state["doc_name"], full_text)
@@ -299,12 +435,12 @@ def graph_and_impact_node(state: AgentState) -> Dict[str, Any]:
 
     dependency_edges = []
     try:
-        dependency_edges = extract_clause_dependencies(state["db_clauses"])
+        dependency_edges = extract_clause_dependencies(legal_clauses)
     except Exception:
         pass
 
     try:
-        graph_store.build_document_graph(state["doc_id"], state["db_clauses"], kg_data, dependency_edges)
+        graph_store.build_document_graph(state["doc_id"], legal_clauses, kg_data, dependency_edges)
         entities = graph_store.flatten_entities(state["doc_id"], kg_data)
         relationships = graph_store.flatten_relationships(kg_data, dependency_edges)
         crud.add_entities_bulk(state["doc_id"], entities)

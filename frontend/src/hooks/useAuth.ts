@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import * as authApi from "../api/authApi";
+import { useActiveDocumentStore } from "../store/activeDocumentStore";
 import { useAuthStore } from "../store/authStore";
+import { useChatStore } from "../store/chatStore";
+import { useComparisonStore } from "../store/comparisonStore";
 
 /** Hydrates auth state from the session cookie on app load — the React
  * equivalent of app.py's `if "user" not in st.session_state: ... = None`
@@ -28,10 +31,28 @@ export function useMeQuery() {
 
 export function useLoginMutation() {
   const setUser = useAuthStore((s) => s.setUser);
+  const clearActiveDocument = useActiveDocumentStore((s) => s.clearActiveDocument);
+  const resetComparison = useComparisonStore((s) => s.resetComparison);
+  const clearChatMessages = useChatStore((s) => s.clearMessages);
+  const closeChat = useChatStore((s) => s.close);
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
       authApi.login(email, password),
-    onSuccess: (user) => setUser(user),
+    onSuccess: (user) => {
+      // A new login may belong to a different account than whatever left
+      // this browser tab's document state behind, so nothing document-scoped
+      // (active doc, comparison picks, chat history, cached analysis/chat
+      // query results) should carry over — the dashboard must land with no
+      // active document, same as a first-ever session.
+      clearActiveDocument();
+      resetComparison();
+      clearChatMessages();
+      closeChat();
+      queryClient.clear();
+      setUser(user);
+    },
   });
 }
 

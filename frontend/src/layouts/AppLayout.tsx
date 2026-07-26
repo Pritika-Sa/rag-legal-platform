@@ -14,7 +14,7 @@ export function AppLayout() {
   return (
     <Box sx={{ display: "flex" }}>
       <Sidebar />
-      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, px: 3, pb: 4 }}>
+      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, px: { xs: 2, md: 3.5 }, pb: 4, maxWidth: "1780px", mx: "auto", width: "100%" }}>
         <TopNav />
         <Outlet />
       </Box>

@@ -13,12 +13,11 @@ export function MiniCard({ label, value, icon }: MiniCardProps) {
   return (
     <Box
       sx={{
-        bgcolor: "action.hover",
-        border: "1px solid",
-        borderColor: "divider",
+        bgcolor: "#f8f9fd",
+        border: "1px solid #e8ebf3",
         borderRadius: 2,
         px: 1.5,
-        py: 1,
+        py: 1.25,
         height: "100%",
       }}
     >

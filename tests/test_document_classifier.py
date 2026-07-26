@@ -112,5 +112,72 @@ class ClassifyDocumentTypeRankedTests(unittest.TestCase):
         self.assertEqual(MIN_CONFIDENT_SCORE, 1)  # documents the assumption this test relies on
 
 
+INVOICE_TEXT = "TAX INVOICE\nInvoice No: INV-2024-00456\nBill To: Sunrise Traders\nGSTIN: 27ABCDE1234F1Z5\nSubtotal: Rs. 65,000"
+RECEIPT_TEXT = "PAYMENT RECEIPT\nReceipt No: RCT-99213\nReceived from: Priya Sharma\nPayment Mode: Cash"
+MEDICAL_RECORD_TEXT = "PATIENT DISCHARGE SUMMARY\nPatient ID: PT-004521\nDate of Admission: 10/02/2024\nDiagnosis: Acute appendicitis\nAttending Physician: Dr. S. Rao"
+BANK_STATEMENT_TEXT = "ACCOUNT STATEMENT\nAccount Number: 5021 3456 7890\nStatement Period: 01/03/2024 to 31/03/2024\nOpening Balance: 50,000\nClosing Balance: 90,000\nIFSC: HDFC0001234"
+IDENTITY_DOCUMENT_TEXT = "PASSPORT\nPassport No: N1234567\nDate of Birth: 12/08/1990\nPlace of Birth: MUMBAI"
+CERTIFICATE_TEXT = "This is to certify that RAHUL MEHTA has completed the course.\nCertificate No: DU/2023/CS/00214"
+PURCHASE_ORDER_TEXT = "PURCHASE ORDER\nPO Number: PO-2024-0091\nVendor: Global Supplies Pvt Ltd\nShip To: Warehouse 3"
+GOVERNMENT_NOTICE_TEXT = "GOVERNMENT OF MAHARASHTRA\nNOTIFICATION\nNo. REV-2024/1123\nIn exercise of the powers conferred..."
+
+# A bank statement that happens to mention "salary" (a real-world-realistic
+# line item) -- the exact text shape that caused the pre-fix classifier to
+# mistake a bank statement for an Employment Agreement (audit finding).
+BANK_STATEMENT_WITH_SALARY_LINE = (
+    "HDFC BANK LIMITED\nACCOUNT STATEMENT\nAccount Number: 5021 3456 7890\n"
+    "Statement Period: 01/03/2024 to 31/03/2024\n"
+    "05/03/2024  Salary Credit   45,000   95,000\nClosing Balance: Rs. 90,000"
+)
+
+
+class NewDocumentTypeDisambiguationTests(unittest.TestCase):
+    """2026-07-26 audit follow-up: the 8 types below were previously
+    entirely unrecognized (UNKNOWN_DOCUMENT_TYPE for every genuine document
+    of these kinds). Verifies both that each is now correctly recognized
+    AND that adding them didn't steal matches away from the pre-existing 21
+    types (checked via test_clear_match / test_insurance_policy_detected
+    above, which still pass unchanged)."""
+
+    def test_invoice_detected(self):
+        self.assertEqual(classify_document_type(INVOICE_TEXT), "Invoice")
+
+    def test_receipt_detected(self):
+        self.assertEqual(classify_document_type(RECEIPT_TEXT), "Receipt")
+
+    def test_medical_record_detected(self):
+        self.assertEqual(classify_document_type(MEDICAL_RECORD_TEXT), "Medical Record")
+
+    def test_bank_statement_detected(self):
+        self.assertEqual(classify_document_type(BANK_STATEMENT_TEXT), "Bank Statement")
+
+    def test_identity_document_detected(self):
+        self.assertEqual(classify_document_type(IDENTITY_DOCUMENT_TEXT), "Identity Document")
+
+    def test_certificate_detected(self):
+        self.assertEqual(classify_document_type(CERTIFICATE_TEXT), "Certificate")
+
+    def test_purchase_order_detected_not_vendor_agreement(self):
+        # Regression guard: "Vendor Agreement"'s existing patterns include a
+        # bare "purchase order" phrase, so a genuine PO document risks being
+        # outscored into the wrong (and unregistered-template) type.
+        self.assertEqual(classify_document_type(PURCHASE_ORDER_TEXT), "Purchase Order")
+
+    def test_government_notice_detected(self):
+        self.assertEqual(classify_document_type(GOVERNMENT_NOTICE_TEXT), "Government Notice")
+
+    def test_bank_statement_with_salary_line_is_not_misclassified_as_employment_agreement(self):
+        # The exact audit-confirmed false positive: a bank statement with a
+        # "Salary Credit" line item used to win as "Employment Agreement"
+        # because Bank Statement had no registered pattern at all.
+        self.assertEqual(classify_document_type(BANK_STATEMENT_WITH_SALARY_LINE), "Bank Statement")
+
+    def test_existing_types_still_win_their_own_documents(self):
+        # New patterns must not cannibalize the pre-existing 21 types' own
+        # matches -- spot-check a few representative ones.
+        self.assertEqual(classify_document_type(NDA_TEXT), "Non-Disclosure Agreement (NDA)")
+        self.assertEqual(classify_document_type(INSURANCE_TEXT), "Insurance Policy")
+
+
 if __name__ == "__main__":
     unittest.main()

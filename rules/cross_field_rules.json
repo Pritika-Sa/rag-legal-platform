@@ -1,18 +1,19 @@
 {
+  "_comment": "2026-07-26 audit follow-up: added 'kind' per field ('id' or 'money') so authenticity/cross_field.py can use authenticity/field_matching.py's deterministic, field-aware comparator instead of blanket character-similarity fuzzy matching. A field with no 'kind' (none currently) falls back to the pre-existing fuzzy-name-style comparator unchanged. Policy Number's pattern also fixed twice, same day, extraction-correctness follow-up, both confirmed against the real document that dropped 78->74: (1) the value group gained a scoped (?-i:...) flag -- compiled with re.IGNORECASE for the 'policy no/number' label text, a bare [A-Z0-9...] value class silently matched lowercase letters too, so a plain word immediately following the label (a repeated page header 'Previous Policy No. Policy Schedule...') got captured as a bogus value; (?-i:...) keeps the label case-insensitive while requiring the captured VALUE to be genuinely uppercase/digit. (2) two negative lookbehinds, (?<!previous\\s) and (?<!previous) (no trailing space), exclude 'Previous Policy No' specifically -- a real insurance renewal document legitimately restates its OWN prior policy number for reference, which is a genuinely different field from the document's own current policy number and was being compared against it as if they should match. Two lookbehinds, not one, because this real PDF's page-level text extraction drops inter-word spaces in places ('PreviousPolicyNo:OG-23-...' with zero spaces) -- confirmed by inspecting the actual stored page text, not assumed.",
   "Insurance Policy": [
-    {"name": "Policy Number", "pattern": "policy\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*([A-Z0-9][A-Z0-9\\-/]*)"},
-    {"name": "Sum Assured", "pattern": "sum assured[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+    {"name": "Policy Number", "pattern": "(?<!previous\\s)(?<!previous)policy\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*(?-i:([A-Z0-9][A-Z0-9\\-/]{3,}))", "kind": "id"},
+    {"name": "Sum Assured", "pattern": "sum assured[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)", "kind": "money"}
   ],
   "Loan Agreement": [
-    {"name": "Principal Amount", "pattern": "principal amount[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+    {"name": "Principal Amount", "pattern": "principal amount[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)", "kind": "money"}
   ],
   "Lease Agreement": [
-    {"name": "Monthly Rent", "pattern": "monthly rent[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+    {"name": "Monthly Rent", "pattern": "monthly rent[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)", "kind": "money"}
   ],
   "Employment Agreement": [
-    {"name": "Salary", "pattern": "salary[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+    {"name": "Salary", "pattern": "salary[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)", "kind": "money"}
   ],
   "Service Agreement": [
-    {"name": "Fees", "pattern": "fees?[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)"}
+    {"name": "Fees", "pattern": "fees?[^\\d]{0,45}([\\d,]+(?:\\.\\d+)?)", "kind": "money"}
   ]
 }

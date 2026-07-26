@@ -1,8 +1,9 @@
-import { Alert, Box, CircularProgress, Grid, MenuItem, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, Grid, MenuItem, TextField, Typography } from "@mui/material";
 import { useMemo, useState } from "react";
 import { PageHeader } from "../components/common/PageHeader";
 import { MetricCard } from "../components/dashboard/MetricCard";
 import { ClauseCard } from "../components/clauses/ClauseCard";
+import { StructuredFieldCard } from "../components/clauses/StructuredFieldCard";
 import { useClausesQuery } from "../hooks/useClauses";
 import { useActiveDocumentStore } from "../store/activeDocumentStore";
 
@@ -20,16 +21,41 @@ export function ClauseAnalysisPage() {
   const [riskFilter, setRiskFilter] = useState("All");
   const [importanceFilter, setImportanceFilter] = useState("All");
   const [search, setSearch] = useState("");
+  const [showStructuredFields, setShowStructuredFields] = useState(false);
 
   const clauses = clausesQuery.data ?? [];
 
-  const classifications = useMemo(
-    () => ["All", ...Array.from(new Set(clauses.map((c) => c.classification).filter((v): v is string => !!v))).sort()],
+  // 2026-07-27: mirrors database/crud.py::get_dashboard_metrics' already-fixed
+  // total_clauses -- structured/metadata fields (classification="Structured
+  // Field", e.g. Policy Number, IDV, Nominee Name) are real, displayable
+  // records, but were inflating this page's own "Total Clauses" KPI
+  // independently of the dashboard's count, producing two different clause
+  // counts for the same document on two pages. The full `clauses` array
+  // (all 77) stays exactly as-is below for the classification filter and
+  // the browsable list -- only this headline count is corrected.
+  const legalClauses = useMemo(() => clauses.filter((c) => c.classification !== "Structured Field"), [clauses]);
+  const structuredFieldClauses = useMemo(
+    () => clauses.filter((c) => c.classification === "Structured Field"),
     [clauses],
   );
 
+  // "Structured Field" is deliberately excluded here -- it has its own
+  // dedicated "View Structured Fields" button below instead of being one
+  // more option buried in this dropdown, so the Clause Type filter only
+  // ever lists genuine legal clause categories.
+  const classifications = useMemo(
+    () => [
+      "All",
+      ...Array.from(new Set(legalClauses.map((c) => c.classification).filter((v): v is string => !!v))).sort(),
+    ],
+    [legalClauses],
+  );
+
+  // The Clause Type dropdown only ever offers legal categories (see
+  // classifications above), so this filter's base pool is always
+  // legalClauses -- Structured Field has its own separate view entirely.
   const filtered = useMemo(() => {
-    let result = clauses;
+    let result = legalClauses;
     if (classFilter !== "All") result = result.filter((c) => c.classification === classFilter);
     if (riskFilter !== "All") result = result.filter((c) => (c.risk_level || "None") === riskFilter);
     if (importanceFilter !== "All") result = result.filter((c) => c.importance_category === importanceFilter);
@@ -42,10 +68,26 @@ export function ClauseAnalysisPage() {
       );
     }
     return result;
-  }, [clauses, classFilter, riskFilter, importanceFilter, search]);
+  }, [legalClauses, classFilter, riskFilter, importanceFilter, search]);
 
-  const highRiskCount = clauses.filter((c) => c.risk_level === "High").length;
-  const importanceScores = clauses.map((c) => c.importance_score).filter((v): v is number => v !== null);
+  const filteredStructuredFields = useMemo(() => {
+    if (!search) return structuredFieldClauses;
+    const needle = search.toLowerCase();
+    return structuredFieldClauses.filter(
+      (c) =>
+        (c.section_name || "").toLowerCase().includes(needle) ||
+        (c.text_content || "").toLowerCase().includes(needle),
+    );
+  }, [structuredFieldClauses, search]);
+
+  // Both stats now read from legalClauses, not the raw clauses array, for
+  // the same reason the "Total Clauses" KPI does (see legalClauses above):
+  // a structured field carries no real legal risk or importance, and for
+  // documents processed before this fix existed, its stale risk_level could
+  // still be a leftover "High"/"Medium" from when it was risk-scored as if
+  // it were a legal clause.
+  const highRiskCount = legalClauses.filter((c) => c.risk_level === "High").length;
+  const importanceScores = legalClauses.map((c) => c.importance_score).filter((v): v is number => v !== null);
   const avgImportance = importanceScores.length
     ? Math.round(importanceScores.reduce((sum, v) => sum + v, 0) / importanceScores.length)
     : 0;
@@ -56,7 +98,7 @@ export function ClauseAnalysisPage() {
         icon="🔍"
         title="Clause Analysis"
         subtitle="Detailed clause-level analysis of the active document"
-        badge="Agents 2 · 3 · 6 · 7"
+
         docName={activeDocName}
       />
 
@@ -82,7 +124,7 @@ export function ClauseAnalysisPage() {
         <>
           <Grid container spacing={2} sx={{ mb: 2 }}>
             <Grid size={{ xs: 12, sm: 4 }}>
-              <MetricCard icon="📑" label="Total Clauses" value={clauses.length} />
+              <MetricCard icon="📑" label="Total Clauses" value={legalClauses.length} />
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
               <MetricCard icon="🔴" label="High Risk Clauses" value={highRiskCount} accent="error.main" />
@@ -94,7 +136,15 @@ export function ClauseAnalysisPage() {
 
           <Grid container spacing={2} sx={{ mb: 2 }}>
             <Grid size={{ xs: 12, sm: 3 }}>
-              <TextField select fullWidth size="small" label="Clause Type" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Clause Type"
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                disabled={showStructuredFields}
+              >
                 {classifications.map((c) => (
                   <MenuItem key={c} value={c}>
                     {c}
@@ -103,7 +153,15 @@ export function ClauseAnalysisPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 3 }}>
-              <TextField select fullWidth size="small" label="Risk Level" value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)}>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Risk Level"
+                value={riskFilter}
+                onChange={(e) => setRiskFilter(e.target.value)}
+                disabled={showStructuredFields}
+              >
                 {RISK_LEVELS.map((r) => (
                   <MenuItem key={r} value={r}>
                     {r}
@@ -119,6 +177,7 @@ export function ClauseAnalysisPage() {
                 label="Importance Level"
                 value={importanceFilter}
                 onChange={(e) => setImportanceFilter(e.target.value)}
+                disabled={showStructuredFields}
               >
                 {IMPORTANCE_LEVELS.map((i) => (
                   <MenuItem key={i} value={i}>
@@ -128,10 +187,26 @@ export function ClauseAnalysisPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 3 }}>
+              {/* Deliberately its own button, not a "Structured Field" option
+                  inside the Clause Type dropdown above -- structured/metadata
+                  fields (Policy Number, IDV, Nominee Name, ...) are a
+                  different KIND of content from legal clauses, not one more
+                  clause type to filter by, so they get their own view. */}
+              <Button
+                fullWidth
+                size="small"
+                variant={showStructuredFields ? "contained" : "outlined"}
+                onClick={() => setShowStructuredFields((v) => !v)}
+                sx={{ height: "40px" }}
+              >
+                {showStructuredFields ? "◀ Back to Clauses" : `🗂 View Structured Fields (${structuredFieldClauses.length})`}
+              </Button>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 3 }}>
               <TextField
                 fullWidth
                 size="small"
-                label="Search title or text"
+                label={showStructuredFields ? "Search field label or value" : "Search title or text"}
                 placeholder="e.g. termination, liability…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -139,13 +214,29 @@ export function ClauseAnalysisPage() {
             </Grid>
           </Grid>
 
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Showing <strong>{filtered.length}</strong> of <strong>{clauses.length}</strong> clauses:
-          </Typography>
-
-          {activeDocId && filtered.map((clause) => (
-            <ClauseCard key={clause.id} docId={activeDocId} clause={clause} />
-          ))}
+          {showStructuredFields ? (
+            <>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                Showing <strong>{filteredStructuredFields.length}</strong> of{" "}
+                <strong>{structuredFieldClauses.length}</strong> structured field(s) — policy/metadata values, not
+                legal clauses:
+              </Typography>
+              {filteredStructuredFields.length === 0 ? (
+                <Alert severity="info">No structured fields match your search.</Alert>
+              ) : (
+                filteredStructuredFields.map((clause) => <StructuredFieldCard key={clause.id} clause={clause} />)
+              )}
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                Showing <strong>{filtered.length}</strong> of <strong>{legalClauses.length}</strong> clauses:
+              </Typography>
+              {activeDocId && filtered.map((clause) => (
+                <ClauseCard key={clause.id} docId={activeDocId} clause={clause} />
+              ))}
+            </>
+          )}
         </>
       )}
     </>

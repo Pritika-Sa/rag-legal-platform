@@ -24,6 +24,7 @@ rather than penalizing the document for them.
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 from types import SimpleNamespace
 
@@ -42,6 +43,46 @@ from database import crud
 from services.document_classifier import classify_document_type_ranked
 
 logger = logging.getLogger(__name__)
+
+# Priority 4, 2026-07-26 audit follow-up: the reference-corpus fetches that
+# feed authenticity.dai's entropy-weight fusion and Jenks tier calibration
+# were added (2026-07-26, same day) with no caching -- every single
+# document assessment triggered two fresh DB round trips, measured at
+# ~1.1s combined during the audit. Unlike a per-document score, the
+# reference corpus only needs to reflect "roughly recent" document history
+# -- one more scored document doesn't meaningfully move an entropy weight
+# or a Jenks break -- so refetching on every call traded latency every
+# document pays for freshness nobody actually needs. Cached here with a TTL,
+# mirroring risk_engine.thresholds.ThresholdRegistry's own lazy-cache-
+# until-refresh posture (that registry is a class instantiated once for the
+# app's lifetime; this module has no equivalent long-lived object, so the
+# cache lives at module scope instead).
+_REFERENCE_CACHE_TTL_SECONDS = 300  # 5 minutes -- disclosed, ablatable; not tuned against load-test data
+_reference_cache: Dict[str, Any] = {"factor_rows": None, "factor_rows_ts": 0.0, "scores": None, "scores_ts": 0.0}
+
+
+def _get_reference_factor_rows() -> List[Dict[str, float]]:
+    now = time.monotonic()
+    if _reference_cache["factor_rows"] is None or (now - _reference_cache["factor_rows_ts"]) > _REFERENCE_CACHE_TTL_SECONDS:
+        _reference_cache["factor_rows"] = crud.get_recent_document_authenticity_factor_scores()
+        _reference_cache["factor_rows_ts"] = now
+    return _reference_cache["factor_rows"]
+
+
+def _get_reference_authenticity_scores() -> List[float]:
+    now = time.monotonic()
+    if _reference_cache["scores"] is None or (now - _reference_cache["scores_ts"]) > _REFERENCE_CACHE_TTL_SECONDS:
+        _reference_cache["scores"] = crud.get_recent_document_authenticity_scores()
+        _reference_cache["scores_ts"] = now
+    return _reference_cache["scores"]
+
+
+def reset_reference_cache() -> None:
+    """Forces the next assessment to refetch both reference corpora rather
+    than waiting out _REFERENCE_CACHE_TTL_SECONDS -- exposed for tests and
+    as an explicit manual-recalibration trigger, mirroring
+    risk_engine.thresholds.ThresholdRegistry's refresh_*() methods."""
+    _reference_cache.update(factor_rows=None, factor_rows_ts=0.0, scores=None, scores_ts=0.0)
 
 
 class FactorSummary(BaseModel):
@@ -118,7 +159,11 @@ def assess_document_authenticity(
         ),
     }
 
-    dai_result = _fuse_authenticity_factors(factor_results)
+    dai_result = _fuse_authenticity_factors(
+        factor_results,
+        reference_corpus=_get_reference_factor_rows(),
+        reference_authenticity_scores=_get_reference_authenticity_scores(),
+    )
     weight_by_name = {c.name: c.weight for c in dai_result.contributions}
 
     factors = [

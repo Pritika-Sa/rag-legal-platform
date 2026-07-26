@@ -59,7 +59,6 @@ export function RiskAnalysisPage() {
           icon="⚠️"
           title="Risk Analysis & Mitigation Advisor"
           subtitle="A plain-English breakdown of document-wide risk and authenticity, plus every flagged clause explained."
-          badge="Agent 4"
         />
         <Alert severity="warning">Please select an active document in the sidebar to review risks.</Alert>
       </>
@@ -72,7 +71,6 @@ export function RiskAnalysisPage() {
         icon="⚠️"
         title="Risk Analysis & Mitigation Advisor"
         subtitle="A plain-English breakdown of document-wide risk and authenticity, plus every flagged clause explained."
-        badge="Agent 4"
         docName={activeDocName}
       />
 
@@ -80,7 +78,7 @@ export function RiskAnalysisPage() {
       <Typography variant="h6" sx={{ mb: 1.5 }}>
         📊 Risk Overview
       </Typography>
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid container spacing={2} sx={{ mb: 2, alignItems: "flex-start" }}>
         <Grid size={{ xs: 12, md: 6 }}>
           {overviewQuery.isLoading ? (
             <CircularProgress size={24} />
@@ -110,10 +108,6 @@ export function RiskAnalysisPage() {
               >
                 🔄 Recompute Authenticity
               </Button>
-              <Typography variant="caption" sx={{ opacity: 0.65, display: "block", mt: 0.5 }}>
-                Runs the current 7-factor engine fresh — rule-based, no LLM call. Use this for documents processed
-                before this engine went live (no factor breakdown below yet).
-              </Typography>
               {recomputeMutation.isError && <Alert severity="error" sx={{ mt: 1 }}>Failed to recompute authenticity.</Alert>}
 
               {authenticity?.authenticity_factors && authenticity.authenticity_factors.length > 0 && (
@@ -154,9 +148,7 @@ export function RiskAnalysisPage() {
             >
               ⚡ Quick Estimate
             </Button>
-            <Typography variant="caption" sx={{ opacity: 0.65, display: "block", mt: 0.5 }}>
-              Rule-based score across every clause — instant, no LLM call.
-            </Typography>
+            
 
             {quickEstimateMutation.isError && <Alert severity="error" sx={{ mt: 1 }}>Failed to generate document risk score.</Alert>}
 

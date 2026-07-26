@@ -73,6 +73,19 @@ class LegalFeatureVector(BaseModel):
     legal_actions: List[LegalAction] = Field(default_factory=list)
     jurisdiction: Optional[str] = None
     dependencies: List[Dependency] = Field(default_factory=list)
+    has_prose_verb: Optional[bool] = Field(
+        default=None,
+        description="True if the clause contains at least one finite verb/auxiliary "
+                     "(spaCy POS VERB or AUX) anywhere, i.e. is prose attempting to state "
+                     "something, as opposed to a structured/tabular data field (a label, a "
+                     "key:value row) that was never prose to begin with. None means unknown "
+                     "(not computed by the caller, e.g. a hand-built or pre-Sprint-2B vector) "
+                     "and is treated as prose by risk_engine.dimensions._ambiguity_feature_signal "
+                     "for backward compatibility. Populated by "
+                     "agents.feature_extraction_agent.extract_legal_features; feeds only the "
+                     "Ambiguity dimension's feature signal (Sprint 2B, Issue 1) — no other "
+                     "dimension reads this field.",
+    )
 
 
 class ClauseInput(BaseModel):

@@ -1,34 +1,187 @@
-# Environment variables
+# =============================================================================
+# Legal RAG — .gitignore
+# Principle: only source code, config, rules, schemas, and tests are versioned.
+# Anything derived from or containing a user's uploaded legal document
+# (text, clauses, embeddings, reports, backups, debug dumps) stays local.
+# =============================================================================
+
+# =========================
+# Environment variables / secrets
+# =========================
 .env
 .env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
-# Python cache
+# =========================
+# Python
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
 # Virtual environments
 venv/
 env/
 .venv/
 
-# Database files
+# Build / Distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+pytest-report/
+test-results/
+
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =========================
+# Databases
+# =========================
+# Any local SQLite file (e.g. database/legal_platform.db) holds real case
+# records, user accounts, and document metadata extracted from uploads.
 *.db
+*.db-journal
+*.sqlite
 *.sqlite3
 
-# Uploaded files
+# =========================
+# Uploaded source documents
+# =========================
+# Raw legal documents a user has uploaded for analysis. Never leaves local disk.
 uploads/
 
-# ChromaDB vector store
+# =========================
+# Vector store / embeddings
+# =========================
+# Chroma persists document chunks + embeddings to disk — this is
+# document content in a different form and must never be committed.
 vectorstore/chroma_db/
+chroma_db/
+*.faiss
+*.index
 
-# IDE files
+# =========================
+# Generated document artifacts, reports, backups, debug dumps
+# =========================
+# These directories/files are always *derived from* uploaded documents:
+# extracted clauses, risk/authenticity/comparison results, DB backups,
+# and one-off debug snapshots. Scoped to specific dirs/suffixes rather
+# than broad extensions so source config/tests are never caught.
+backups/
+debug_output/
+reports/
+structure.txt
+
+# debug/ mixes tracked tooling scripts with generated snapshots/logs —
+# ignore only the generated files, keep the *.py scripts under version control.
+debug/*.json
+debug/*.jsonl
+debug/*.log
+
+# Generated report/debug file suffixes (produced by pipeline runs, not authored)
+*_report.txt
+*_debug.txt
+*_debug.log
+*_debug.json
+*_backup_*.json
+
+# =========================
+# Document formats (uploaded / exported documents only)
+# =========================
+# These extensions are only ever produced in this repo as uploaded source
+# documents or exported analysis output — never as project source or config
+# (rules/config/schemas are .json/.py, never .pdf/.docx/.csv/etc.). If you
+# ever need to track a real doc asset (e.g. a docs/ diagram export), add a
+# scoped negation, e.g. "!docs/**/*.pdf", rather than removing these lines.
+*.pdf
+*.doc
+*.docx
+*.odt
+*.rtf
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.eml
+*.msg
+*.csv
+*.jsonl
+*.ndjson
+*.parquet
+
+# docs/ is the designated tracked location for real documentation assets
+# (e.g. architecture diagrams) — exempt PDFs there from the blanket rule above.
+!docs/**/*.pdf
+
+# =========================
+# OCR / model caches
+# =========================
+ocr_cache/
+hf_cache/
+local_models/
+model_cache/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# IDE
+# =========================
 .vscode/
 .idea/
 
-# OS files
+# =========================
+# OS
+# =========================
 .DS_Store
 Thumbs.db
 
-# React frontend (migration)
+# =========================
+# React frontend
+# =========================
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
+
+# =========================
+# Node
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Temporary / editor swap files
+# =========================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.pid
+
+# Tests
+tests/
+
+git add debug/*.py

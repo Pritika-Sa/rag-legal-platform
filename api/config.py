@@ -1,4 +1,5 @@
 import os
+import secrets
 
 from dotenv import load_dotenv
 
@@ -11,6 +12,12 @@ AUTH_COOKIE_NAME = "access_token"
 
 APP_ENV = os.getenv("APP_ENV", "development")
 IS_PRODUCTION = APP_ENV == "production"
+
+# Random per-process id, generated fresh on every FastAPI startup and kept
+# in memory only. In development this is stamped into issued JWTs so that
+# restarting the server invalidates every cookie from the previous process,
+# forcing a fresh login instead of silently resuming a stale session.
+SERVER_INSTANCE_ID = secrets.token_hex(32)
 
 # Comma-separated list of allowed frontend origins for CORS in development
 # (e.g. the Vite dev server). In production the frontend is expected to be

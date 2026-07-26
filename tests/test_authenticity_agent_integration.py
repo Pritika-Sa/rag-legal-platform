@@ -22,6 +22,7 @@ Run with:  python -m unittest tests.test_authenticity_agent_integration
 import unittest
 
 from agents.authenticity_agent import assess_document_authenticity
+from authenticity.dai import DAI_TIER_LABELS
 
 LOAN_AGREEMENT_TEXT = """
 LOAN AGREEMENT
@@ -72,9 +73,7 @@ class AssessDocumentAuthenticityIntegrationTest(unittest.TestCase):
         result = assess_document_authenticity("loan.pdf", LOAN_AGREEMENT_CLAUSES, LOAN_AGREEMENT_TEXT)
 
         self.assertTrue(0 <= result.authenticity_score <= 100)
-        self.assertIn(result.authenticity_level, (
-            "Authentic", "Likely Authentic", "Suspicious", "Highly Suspicious", "Insufficient Signal",
-        ))
+        self.assertIn(result.authenticity_level, DAI_TIER_LABELS + ("Insufficient Signal",))
         self.assertEqual(result.document_type, "Loan Agreement")
         self.assertEqual(len(result.factors), 8)
 

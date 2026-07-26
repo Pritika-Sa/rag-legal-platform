@@ -47,10 +47,20 @@ export function Sidebar() {
       sx={{
         width: SIDEBAR_WIDTH,
         flexShrink: 0,
-        [`& .MuiDrawer-paper`]: { width: SIDEBAR_WIDTH, boxSizing: "border-box", p: 2 },
+        [`& .MuiDrawer-paper`]: {
+          width: SIDEBAR_WIDTH,
+          boxSizing: "border-box",
+          p: 2,
+          display: "flex",
+          flexDirection: "column",
+          height: "100dvh",
+          overflow: "hidden",
+          borderRight: "1px solid #e4e7ee",
+          bgcolor: "#ffffff",
+        },
       }}
     >
-      <Box sx={{ textAlign: "center", pt: 1, pb: 2 }}>
+      <Box sx={{ textAlign: "center", pt: 1, pb: 2, flexShrink: 0 }}>
         <Box
           sx={{
             fontSize: "1.4rem",
@@ -92,7 +102,7 @@ export function Sidebar() {
         </Box>
       </Stack>
 
-      <Button variant="outlined" fullWidth onClick={handleLogout} loading={logoutMutation.isPending}>
+      <Button variant="outlined" fullWidth onClick={handleLogout} loading={logoutMutation.isPending} sx={{ flexShrink: 0 }}>
         Log Out
       </Button>
 
@@ -104,7 +114,14 @@ export function Sidebar() {
 
       <UploadPanel />
 
-      <Box sx={{ flexGrow: 1, overflowY: "auto", minHeight: 0 }}>
+      <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 1, flexShrink: 0 }}>
+        <Typography sx={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "text.secondary" }}>
+          Your documents
+        </Typography>
+        <Chip label={documentsQuery.data?.length ?? 0} size="small" sx={{ height: 20, minWidth: 28, fontSize: "0.68rem", fontWeight: 700, bgcolor: "rgba(99, 110, 250, 0.10)", color: "primary.main" }} />
+      </Stack>
+
+      <Box sx={{ flexGrow: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0, pr: 0.5, mr: -0.5 }}>
         {documentsQuery.isLoading && (
           <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
             <CircularProgress size={22} />
@@ -123,14 +140,15 @@ export function Sidebar() {
               key={doc.id}
               sx={{
                 border: "1px solid",
-                borderColor: isActive ? "primary.main" : "divider",
-                boxShadow: isActive ? "0 0 0 1px" : "none",
+                borderColor: isActive ? "primary.main" : "#e4e7ee",
+                boxShadow: isActive ? "0 0 0 1px rgba(99, 110, 250, 0.16)" : "none",
                 borderRadius: 2,
                 p: 1.25,
                 mb: 1,
+                bgcolor: isActive ? "rgba(99, 110, 250, 0.035)" : "#fff",
               }}
             >
-              <Typography sx={{ fontWeight: 700, fontSize: "0.86rem", overflowWrap: "anywhere" }}>
+              <Typography sx={{ fontWeight: 700, fontSize: "0.86rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={doc.name}>
                 {fileIcon(doc.name)} {doc.name}
               </Typography>
               <Stack direction="row" sx={{ alignItems: "center", gap: 0.75, mt: 0.5, mb: 1 }}>
@@ -175,7 +193,7 @@ export function Sidebar() {
           );
         })}
       </Box>
-      <Typography sx={{ textAlign: "center", fontSize: "0.72rem", opacity: 0.45, mt: 2 }}>
+      <Typography sx={{ display: "none" }}>
         LQ-LegalAI · Multi-Agent Legal Intelligence
       </Typography>
     </Drawer>

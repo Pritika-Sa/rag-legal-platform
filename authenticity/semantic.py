@@ -57,6 +57,44 @@ _WORD_RE = re.compile(r"[A-Za-z]{2,}")
 STRUCTURED_DOCUMENT_THRESHOLD = 0.5
 
 _LEADING_NUM_RE = re.compile(r"^\s*(\d+)(?:\.\d+)*")
+
+# Priority 3, 2026-07-26 audit follow-up: raw cosine similarity from this
+# embedding model, even for genuinely well-matched heading/body pairs, does
+# not approach 1.0 the way a found/total fraction naturally does for the
+# other 7 authenticity factors -- empirically probed against 10 diverse,
+# genuinely well-written clause pairs (Termination, Confidentiality,
+# Payment, Governing Law, Liability, Indemnification, Notices, Force
+# Majeure, Assignment, Entire Agreement): mean 0.4527, range 0.08-0.71. A
+# parallel probe against 10 heading/unrelated-content pairs (clearly
+# mismatched, e.g. "Payment" paired with a paragraph about arctic terns)
+# scored a tight 0.0-0.05 cluster. Directly using the raw similarity as a
+# 0-1 "fraction correct" score -- the same scale the other 7 factors' own
+# found/total fractions naturally reach 1.0 on -- therefore systematically
+# under-scored genuine documents relative to their peers before fusion ever
+# ran (confirmed: two real, complete, correctly-clause-tagged genuine
+# documents scored raw mean similarity 0.45-0.49 during the audit).
+#
+# SEMANTIC_SIMILARITY_FLOOR/CEILING linearly rescale the raw similarity so
+# the observed mismatched-cluster ceiling (~0.05) maps to 0 and a
+# comfortably-matched similarity (0.40 -- below the matched mean, so most
+# genuine pairs reach the ceiling, not only the highest-overlap ones) maps
+# to 1.0, clamped to [0, 1] on either side. Disclosed, ablatable constants
+# grounded in this specific probe -- not a claim that these exact numbers
+# are the only defensible choice, same status as every other disclosed
+# constant in this engine (GST_ARITHMETIC_TOLERANCE, DIGITAL_ARTIFACT_BONUS,
+# NUMERIC_RELATIVE_TOLERANCE, ...). Recalibrate from a labelled corpus once
+# one exists, same cold-start-then-calibrate posture as everywhere else.
+SEMANTIC_SIMILARITY_FLOOR = 0.06
+SEMANTIC_SIMILARITY_CEILING = 0.40
+
+
+def _calibrate_similarity(raw_similarity: float) -> float:
+    """Maps a raw cosine similarity onto the same 0-1 "authenticity
+    fraction" scale the other 7 factors use, per the calibration above."""
+    span = SEMANTIC_SIMILARITY_CEILING - SEMANTIC_SIMILARITY_FLOOR
+    if span <= 0:
+        return raw_similarity
+    return float(np.clip((raw_similarity - SEMANTIC_SIMILARITY_FLOOR) / span, 0.0, 1.0))
 _PLACEHOLDER_VALUE_RE = re.compile(
     r"^[\s\-_.:]*$|^(n/?a|tbd|none|pending|to be (?:filled|determined|confirmed))[\s.]*$", re.IGNORECASE,
 )
@@ -129,24 +167,39 @@ def _assess_prose_mode(usable: List[Dict[str, Any]], skipped_non_prose: int) -> 
     heading_vecs = embed_texts(headings)
     body_vecs = embed_texts(bodies)
     sim_matrix = cosine_similarity_matrix(heading_vecs, body_vecs)
-    similarities = [float(np.clip(sim_matrix[i, i], 0.0, 1.0)) for i in range(len(usable))]
+    # Raw cosine similarity, clamped to [0, 1] -- kept as-is in `checked`
+    # (per-clause evidence, not part of the score) since it's the honest,
+    # directly-interpretable number a reviewer would want to see; the mean
+    # used for the FACTOR SCORE is calibrated below (see
+    # SEMANTIC_SIMILARITY_FLOOR/CEILING) so it's on the same scale as the
+    # other 7 factors. Calibration is monotonic, so "lowest match" ordering
+    # below is identical either way.
+    raw_similarities = [float(np.clip(sim_matrix[i, i], 0.0, 1.0)) for i in range(len(usable))]
+    calibrated_similarities = [_calibrate_similarity(s) for s in raw_similarities]
 
     checked = [
-        ClauseSemanticMatch(section_name=usable[i].get("section_name", ""), similarity=round(similarities[i], 4))
+        ClauseSemanticMatch(section_name=usable[i].get("section_name", ""), similarity=round(raw_similarities[i], 4))
         for i in range(len(usable))
     ]
-    score = round(sum(similarities) / len(similarities), 4)
+    raw_mean = sum(raw_similarities) / len(raw_similarities)
+    score = round(sum(calibrated_similarities) / len(calibrated_similarities), 4)
     confidence = round(100.0 * evidence_confidence(len(usable)), 2)
 
     worst = sorted(checked, key=lambda c: c.similarity)[:WORST_N_IN_EVIDENCE]
     skip_note = f" ({skipped_non_prose} non-prose field-value clause(s) skipped)" if skipped_non_prose else ""
     evidence = [
         "Document is primarily prose; applied heading-body semantic similarity.",
-        f"Checked {len(usable)} clause(s){skip_note}; mean heading-body semantic similarity {score:.2f}.",
+        f"Checked {len(usable)} clause(s){skip_note}; mean raw cosine similarity {raw_mean:.2f}, "
+        f"calibrated to an authenticity score of {score:.2f} (raw similarity <= {SEMANTIC_SIMILARITY_FLOOR:.2f} "
+        f"reads as unrelated, >= {SEMANTIC_SIMILARITY_CEILING:.2f} reads as fully consistent -- calibrated "
+        f"against observed genuine vs. mismatched heading/body pairs, not used raw).",
     ]
-    evidence += [f"Lowest match: '{w.section_name}' (similarity {w.similarity:.2f})." for w in worst]
+    evidence += [f"Lowest match: '{w.section_name}' (raw similarity {w.similarity:.2f})." for w in worst]
 
-    logger.debug(f"[semantic] mode=prose usable={len(usable)} skipped_non_prose={skipped_non_prose} score={score:.4f} confidence={confidence:.2f}")
+    logger.debug(
+        f"[semantic] mode=prose usable={len(usable)} skipped_non_prose={skipped_non_prose} "
+        f"raw_mean={raw_mean:.4f} calibrated_score={score:.4f} confidence={confidence:.2f}"
+    )
 
     return SemanticConsistencyFactorResult(
         applicable=True, score=score, confidence=confidence, mode="prose", checked=checked, evidence=evidence,

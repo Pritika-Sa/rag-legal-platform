@@ -55,6 +55,18 @@ logger = logging.getLogger(__name__)
 
 _RULES_PATH = Path(__file__).resolve().parent.parent / "rules" / "document_structure_rules.json"
 GENERIC_MINIMAL_KEY = "generic_minimal"
+# 2026-07-26 audit follow-up: a SEPARATE fallback from GENERIC_MINIMAL_KEY,
+# used only when classification.document_type is genuinely
+# UNKNOWN_DOCUMENT_TYPE (see _select_fallback_template below). GENERIC_MINIMAL_KEY
+# is contract-shaped ("between X and Y" parties, "in witness whereof"
+# signatures) and stays unchanged for classified-but-template-less types
+# (e.g. "Sale Deed") -- that behavior predates this change and is out of
+# this fix's scope. An Unknown document has no type signal at all, so
+# scoring it against contract-shaped requirements it was never going to
+# satisfy (a genuine invoice, receipt, or ID has no "parties" or "witnesseth"
+# language) is exactly the false-negative failure mode this fallback exists
+# to remove.
+GENERIC_DOCUMENT_AGNOSTIC_KEY = "generic_document_agnostic"
 
 _LEADING_NUM_RE = re.compile(r"^\s*(\d+)(?:\.\d+)*")
 
@@ -78,6 +90,8 @@ def _load_compiled_rules() -> Dict[str, List[Tuple[str, List["re.Pattern"]]]]:
 _COMPILED = _load_compiled_rules()
 if GENERIC_MINIMAL_KEY not in _COMPILED:
     raise RuntimeError(f"document_structure_rules.json is missing its required '{GENERIC_MINIMAL_KEY}' template")
+if GENERIC_DOCUMENT_AGNOSTIC_KEY not in _COMPILED:
+    raise RuntimeError(f"document_structure_rules.json is missing its required '{GENERIC_DOCUMENT_AGNOSTIC_KEY}' template")
 
 
 class StructureFactorResult(BaseModel):
@@ -189,7 +203,17 @@ def assess_structure(
     )
 
     if not has_specific_template:
-        found, missing = _check_template(normalized, GENERIC_MINIMAL_KEY)
+        # 2026-07-26 audit follow-up: a genuinely Unknown document (no type
+        # signal at all) gets the document-agnostic fallback (no "parties"/
+        # "witnesseth" contract-language requirement); a document the
+        # classifier DID recognize but that simply has no structure template
+        # registered yet (e.g. "Sale Deed") keeps using the pre-existing
+        # contract-shaped generic_minimal template unchanged -- that case
+        # wasn't part of what the audit found broken, and its instructions
+        # don't ask for a change here.
+        is_unknown = classification.document_type == UNKNOWN_DOCUMENT_TYPE
+        fallback_key = GENERIC_DOCUMENT_AGNOSTIC_KEY if is_unknown else GENERIC_MINIMAL_KEY
+        found, missing = _check_template(normalized, fallback_key)
         section_score = _fraction(found, missing)
         score = _combine_structural_signals(section_score, numbering_score, continuity_score)
         # No type signal to corroborate the template choice at all -- a
@@ -198,17 +222,18 @@ def assess_structure(
         # much of the generic template was actually found.
         confidence = round(100.0 * 0.5 * evidence_confidence(len(found)), 2)
         reason = (
-            f"No structure template is registered for '{classification.document_type}'; "
-            f"checked the generic minimum (Title/Parties/Date/Signature) instead."
-            if classification.document_type != UNKNOWN_DOCUMENT_TYPE
-            else "Document type could not be confidently classified; checked the generic minimum instead."
+            "Document type could not be confidently classified; checked a document-agnostic "
+            "minimum (Heading/Issuer, Reference Number, Date) instead of a contract-shaped template."
+            if is_unknown
+            else f"No structure template is registered for '{classification.document_type}'; "
+                 f"checked the generic minimum (Title/Parties/Date/Signature) instead."
         )
         evidence = [reason]
         evidence += [f"Found: {s}" for s in found] + [f"MISSING: {s}" for s in missing]
         evidence += _structural_signal_evidence(numbering_score, continuity_score)
-        logger.debug(f"[structure] template=generic_minimal section_score={section_score:.4f} final_score={score:.4f} confidence={confidence:.2f}")
+        logger.debug(f"[structure] template={fallback_key} section_score={section_score:.4f} final_score={score:.4f} confidence={confidence:.2f}")
         return StructureFactorResult(
-            score=round(score, 4), confidence=confidence, template_used=GENERIC_MINIMAL_KEY,
+            score=round(score, 4), confidence=confidence, template_used=fallback_key,
             found_sections=found, missing_sections=missing,
             section_numbering_score=numbering_score, page_continuity_score=continuity_score, evidence=evidence,
         )

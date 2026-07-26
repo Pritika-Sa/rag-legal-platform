@@ -76,8 +76,8 @@
     "regex": "\\bnon[\\s-]?compet(e|ition)\\b|\\bnon[\\s-]?solicit(ation)?\\b|\\bnon[\\s-]?circumvent(ion)?\\b|\\brestrictive\\s+covenant\\b"
   },
   "Data Protection": {
-    "keywords": ["data protection", "personal data", "privacy policy", "gdpr", "data processing", "data subject", "data breach"],
-    "regex": "\\bdata\\s+protection\\b|\\bpersonal\\s+data\\b|\\bprivacy\\s+polic(y|ies)\\b|\\bgdpr\\b|\\bdata\\s+process(ing|or)\\b|\\bdata\\s+breach\\b"
+    "keywords": ["data protection", "personal data", "privacy policy", "gdpr", "data processing", "data subject", "data breach", "medical information", "medical records", "health information", "health records"],
+    "regex": "\\bdata\\s+protection\\b|\\bpersonal\\s+data\\b|\\bprivacy\\s+polic(y|ies)\\b|\\bgdpr\\b|\\bdata\\s+process(ing|or)\\b|\\bdata\\s+breach\\b|\\bmedical\\s+(information|records)\\b|\\bhealth\\s+(information|records)\\b"
   },
   "Insurance Requirements": {
     "keywords": ["maintain insurance", "insurance coverage", "certificate of insurance", "additional insured", "general liability insurance", "workers compensation insurance"],
@@ -88,8 +88,8 @@
     "regex": "\\bindependent\\s+contractor\\b|\\bnot\\s+an\\s+employee\\b|\\bemployer[\\s-]employee\\s+relationship\\b"
   },
   "Counterparts": {
-    "keywords": ["counterparts", "executed in counterparts", "duplicate originals", "facsimile signature", "electronic signature"],
-    "regex": "\\bcounterparts?\\b|\\bduplicate\\s+originals?\\b|\\belectronic\\s+signature\\b|\\bfacsimile\\s+signature\\b"
+    "keywords": ["counterparts", "executed in counterparts", "duplicate originals", "facsimile signature", "electronic signature", "in witness whereof", "witness", "executed by", "execution", "signature block"],
+    "regex": "\\bcounterparts?\\b|\\bduplicate\\s+originals?\\b|\\belectronic\\s+signature\\b|\\bfacsimile\\s+signature\\b|\\bin\\s+witness\\s+whereof\\b|\\bwitness(es)?\\b|\\bexecuted\\s+by\\b|\\bexecution\\b|\\bsignature\\s+block\\b"
   },
   "Survival": {
     "keywords": ["survival", "survive termination", "survive expiration", "shall survive"],
@@ -104,8 +104,8 @@
     "regex": "\\baudit(s|ing)?\\b|\\bright\\s+to\\s+audit\\b|\\binspect\\s+records\\b|\\bbooks\\s+and\\s+records\\b"
   },
   "Coverage and Scope": {
-    "keywords": ["coverage", "covered loss", "scope of coverage", "insured event", "sum insured", "policy limits", "insuring clause"],
-    "regex": "\\bcoverage\\b|\\bcovered\\s+(loss|event|peril)\\b|\\bsum\\s+insured\\b|\\bpolicy\\s+limits?\\b|\\binsuring\\s+clause\\b"
+    "keywords": ["coverage", "covered loss", "scope of coverage", "insured event", "sum insured", "policy limits", "insuring clause", "covers", "covered by", "driver eligibility", "authorized driver", "permitted use", "limitations as to use"],
+    "regex": "\\bcoverage\\b|\\bcovered\\s+(loss|event|peril|by)\\b|\\bcovers?\\b|\\bsum\\s+insured\\b|\\bpolicy\\s+limits?\\b|\\binsuring\\s+clause\\b|\\bdriver\\s+eligibility\\b|\\bauthorized\\s+driver(s)?\\b|\\bpermitted\\s+use\\b|\\blimitations?\\s+as\\s+to\\s+use\\b"
   },
   "Premium": {
     "keywords": ["premium", "premium payment", "premium due", "grace period", "premium amount"],
@@ -128,8 +128,8 @@
     "regex": "\\bpolicy\\s+(period|term)\\b|\\brenewal\\b|\\beffective\\s+date\\b"
   },
   "Cancellation": {
-    "keywords": ["cancellation", "cancel the policy", "right to cancel", "cancellation notice", "non-renewal"],
-    "regex": "\\bcancel(lation|led|s)?\\b|\\bnon[\\s-]?renewal\\b"
+    "keywords": ["cancellation", "cancel the policy", "right to cancel", "cancellation notice", "non-renewal", "void", "void ab initio", "null and void"],
+    "regex": "\\bcancel(lation|led|s)?\\b|\\bnon[\\s-]?renewal\\b|\\bvoid\\b|\\bvoid\\s+ab\\s+initio\\b|\\bnull\\s+and\\s+void\\b"
   },
   "Subrogation": {
     "keywords": ["subrogation", "subrogate", "right of subrogation", "waiver of subrogation"],
@@ -194,5 +194,21 @@
   "Dispute Resolution": {
     "keywords": ["dispute resolution", "mediation", "litigation", "negotiate in good faith", "escalation procedure", "resolve disputes"],
     "regex": "\\bdispute\\s+resolution\\b|\\bmediation\\b|\\blitigation\\b|\\bnegotiate\\s+in\\s+good\\s+faith\\b|\\bresolve\\s+disputes?\\b"
+  },
+  "Recitals and Background": {
+    "keywords": ["borrower", "lender", "employer", "employee", "party identification", "registered office", "registered address", "residing at", "purpose of agreement", "this agreement is made", "whereas", "recitals", "background"],
+    "regex": "\\bwhereas\\b|\\brecitals\\b|\\bbackground\\b|\\bthis\\s+agreement\\s+is\\s+made\\b|\\bpurpose\\s+of\\s+(this\\s+|the\\s+)?agreement\\b|\\bregistered\\s+(office|address)\\b|\\bresiding\\s+at\\b"
+  },
+  "Term and Duration": {
+    "keywords": ["term of agreement", "duration", "effective period", "shall continue", "months", "years", "commencement", "agreement period"],
+    "regex": "\\bterm\\s+of\\s+(this\\s+|the\\s+)?agreement\\b|\\bagreement\\s+period\\b|\\beffective\\s+period\\b|\\bshall\\s+continue\\b|\\bcommenc(e|ement|ing)\\b|\\bduration\\b"
+  },
+  "Workplace Monitoring and Surveillance": {
+    "keywords": ["surveillance", "monitoring", "camera", "cctv", "microphone", "tracking device", "gps tracking", "employee monitoring", "remote monitoring", "workplace monitoring"],
+    "regex": "\\bsurveillance\\b|\\bmonitor(ing)?\\b|\\bcamera(s)?\\b|\\bcctv\\b|\\bmicrophone(s)?\\b|\\btracking\\s+device(s)?\\b|\\bgps\\s+tracking\\b|\\bemployee\\s+monitoring\\b|\\bremote\\s+monitoring\\b|\\bworkplace\\s+monitoring\\b"
+  },
+  "Leave and Time Off": {
+    "keywords": ["annual leave", "sick leave", "emergency leave", "paid leave", "vacation", "pto", "time off", "leave policy"],
+    "regex": "\\bannual\\s+leave\\b|\\bsick\\s+leave\\b|\\bemergency\\s+leave\\b|\\bpaid\\s+leave\\b|\\bvacation\\b|\\bpto\\b|\\btime\\s+off\\b|\\bleave\\s+polic(y|ies)\\b"
   }
 }

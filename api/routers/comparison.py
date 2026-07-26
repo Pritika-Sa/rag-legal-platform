@@ -36,7 +36,17 @@ async def compare(body: ComparisonRequest, current_user: dict = Depends(get_curr
 
     from agents.comparison_agent import compare_documents
 
-    result = await run_in_threadpool(compare_documents, clauses_a, clauses_b, doc_a["name"], doc_b["name"])
+    # 2026-07-27 clause-extraction fix: structured/metadata fields (Policy
+    # Number, IDV, Nominee Name, ...) are excluded from the actual
+    # comparison -- diffing two policy-schedule table rows as if they were
+    # competing legal clauses produced meaningless "added/removed/modified
+    # clause" noise. clauses_a/clauses_b themselves stay unfiltered below,
+    # so structured fields remain visible in the comparison UI's raw clause
+    # lists; only the analysis input is filtered.
+    legal_clauses_a = [c for c in clauses_a if c.get("classification") != "Structured Field"]
+    legal_clauses_b = [c for c in clauses_b if c.get("classification") != "Structured Field"]
+
+    result = await run_in_threadpool(compare_documents, legal_clauses_a, legal_clauses_b, doc_a["name"], doc_b["name"])
 
     crud.add_audit_log("compare_documents", f"Compared {doc_a['name']} and {doc_b['name']} with Agent 10")
 

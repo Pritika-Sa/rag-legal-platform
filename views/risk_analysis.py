@@ -302,7 +302,6 @@ def render():
         "⚠️",
         "Risk Analysis & Mitigation Advisor",
         "A plain-English breakdown of document-wide risk and authenticity, plus every flagged clause explained.",
-        badge="Agent 4",
         doc_name=doc_name,
     )
 

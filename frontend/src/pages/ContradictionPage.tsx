@@ -21,7 +21,6 @@ export function ContradictionPage() {
         icon="⚖️"
         title="Contradiction & Inconsistency Finder"
         subtitle="Identifies conflicting statements, inconsistent obligations, and contradictory terms within the document."
-        badge="Agent 5"
         docName={activeDocName}
       />
 
@@ -33,9 +32,7 @@ export function ContradictionPage() {
         <Box sx={{ textAlign: "center", py: 6 }}>
           <CircularProgress />
           <Typography variant="body2" sx={{ mt: 2, opacity: 0.7, maxWidth: 480, mx: "auto" }}>
-            Agent 5 is running a one-time deeper AI check for this document — grouping clauses, checking
-            numeric/date/entity mismatches, and verifying semantically similar pairs with AI. Future visits to this
-            page will load instantly.
+            Finding contradictions and inconsistencies in this document… This may take a few seconds, depending on the document's length and complexity.
           </Typography>
         </Box>
       )}

@@ -14,6 +14,9 @@ const SUGGESTED_QUESTIONS = [
   "Is there a liability cap?",
 ];
 
+const OUT_OF_SCOPE_MESSAGE =
+  "This question is not related to the active document. Legal AI can answer only questions based on the active document.";
+
 // Port of app.py's `with st.container(key="lq_chat_panel"):` block: same
 // scope resolution (active document by default; a doc-A/doc-B picker when
 // on the Comparison page with both selected), same suggested-questions row,
@@ -49,7 +52,11 @@ export function ChatPanel() {
       { query, docId: targetDocId },
       {
         onSuccess: (result) => {
-          addMessage({ role: "assistant", content: result.answer, resultPayload: result });
+          addMessage(
+            result.answer.trim() === OUT_OF_SCOPE_MESSAGE
+              ? { role: "assistant", content: result.answer }
+              : { role: "assistant", content: result.answer, resultPayload: result },
+          );
         },
         onError: (error) => {
           addMessage({ role: "assistant", content: `Failed to answer: ${error}` });
@@ -141,7 +148,7 @@ export function ChatPanel() {
 
         {askMutation.isPending && (
           <Typography variant="caption" sx={{ opacity: 0.6 }}>
-            Agent 9 is retrieving and validating answers…
+            Legal AI is thinking… (this may take a few seconds)
           </Typography>
         )}
       </Box>

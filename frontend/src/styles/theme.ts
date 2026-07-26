@@ -13,13 +13,16 @@ export const lqColors = {
 };
 
 export const theme = createTheme({
-  colorSchemes: { light: true, dark: true },
+  // Light only — the app should always render on a white background
+  // regardless of the OS/browser's dark-mode preference.
+  colorSchemes: { light: true },
   palette: {
     primary: { main: lqColors.accent, dark: lqColors.accentDark },
     success: { main: lqColors.success },
     warning: { main: lqColors.warning },
     error: { main: lqColors.danger },
   },
+  spacing: 8,
   typography: {
     fontFamily: "'Inter', sans-serif",
     h1: { fontFamily: "'Manrope', sans-serif", fontWeight: 800 },
@@ -31,10 +34,42 @@ export const theme = createTheme({
   },
   shape: { borderRadius: 10 },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: { backgroundColor: "#f7f8fc", color: "#182230" },
+      },
+    },
     MuiButton: {
       styleOverrides: {
-        root: { textTransform: "none", fontWeight: 600 },
+        root: { textTransform: "none", fontWeight: 700, borderRadius: 10, boxShadow: "none" },
       },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: { backgroundColor: "#ffffff", borderRadius: 10 },
+        notchedOutline: { borderColor: "#dfe3ee" },
+      },
+    },
+    MuiAccordion: {
+      styleOverrides: {
+        root: {
+          border: "1px solid #e6e9f0",
+          borderRadius: "10px !important",
+          boxShadow: "none",
+          overflow: "hidden",
+          "&:before": { display: "none" },
+          "& + &": { marginTop: 8 },
+        },
+      },
+    },
+    MuiAccordionSummary: {
+      styleOverrides: {
+        root: { minHeight: 48, padding: "0 16px", fontWeight: 700, backgroundColor: "#fbfcff" },
+        content: { margin: "12px 0" },
+      },
+    },
+    MuiAccordionDetails: {
+      styleOverrides: { root: { padding: "16px" } },
     },
   },
 });

@@ -5,6 +5,7 @@ interface ComparisonState {
   docBId: number | null;
   setDocA: (id: number) => void;
   setDocB: (id: number) => void;
+  resetComparison: () => void;
 }
 
 // Separate from activeDocumentStore on purpose — mirrors the original
@@ -20,4 +21,5 @@ export const useComparisonStore = create<ComparisonState>((set) => ({
   docBId: null,
   setDocA: (id) => set({ docAId: id }),
   setDocB: (id) => set({ docBId: id }),
+  resetComparison: () => set({ docAId: null, docBId: null }),
 }));

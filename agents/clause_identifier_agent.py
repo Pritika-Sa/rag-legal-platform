@@ -13,6 +13,51 @@ __all__ = ["CLAUSE_RULES", "IdentifiedClause", "identify_clauses"]
 # clause of a specific type (see rule_engine.detect_clause_type scoring).
 MIN_CONFIDENCE = 0.3
 
+# Sprint 3, Issue 2: a distinct, honest label for blocks recovered via the
+# structural acceptance path below -- never assigned by detect_clause_type
+# itself, never confused with a real CLAUSE_RULES category match.
+STRUCTURED_FIELD_TYPE = "Structured Field"
+
+# Corpus-derived (not hand-picked): calibrated against every block a real
+# insurance policy's CLAUSE_RULES gate rejected (Sprint 1/2A/2C). Sorting
+# those blocks by the length of the text trailing their last colon shows a
+# sharp, clean gap -- genuine terse field values (dates, IDs, amounts,
+# names, short category words: "NA.", "20,447.00.", "SASIKUMAR M") cluster
+# at <= 33 characters; genuine prose/letterhead continuations ("Any person
+# including the insured provided that...", full addresses) start at 42+
+# and climb into the hundreds. 35 sits in that gap. See the Sprint 3 design
+# notes for the full sorted distribution this was measured against.
+MAX_TRAILING_VALUE_LEN = 35
+
+
+def _looks_like_structured_field(block: str) -> bool:
+    """Content-agnostic, keyword-free structural signal for 'this reads as
+    a labeled schedule/table/form field' (e.g. "IDV (in Rs.): 20,447.00.",
+    "14. Pre Existing damages in the vehicle : NA.") as opposed to
+    narrative prose CLAUSE_RULES simply doesn't have a category for yet.
+    Used ONLY as a second, independent acceptance path in identify_clauses
+    for blocks that already failed the CLAUSE_RULES/MIN_CONFIDENCE gate --
+    never overrides a real keyword-category match, never changes
+    detect_clause_type/CLAUSE_RULES/MIN_CONFIDENCE themselves.
+
+    The signal: the text trailing the block's LAST colon is short. A real
+    form field's value is terse regardless of subject matter or whether
+    the value itself is numeric ("Yes.", "NOT APPLICABLE.", "20,447.00.");
+    narrative prose that happens to contain a colon ("Note: the parties
+    agree that...") continues into a long sentence instead. Deliberately
+    single-signal and genre-general -- adding more conditions (e.g.
+    requiring digits) would silently exclude genuine non-numeric field
+    values like yes/no disclosures, which is exactly the content Sprint 1
+    flagged as wrongly discarded.
+    """
+    idx = block.rfind(":")
+    if idx == -1:
+        return False
+    trailing = block[idx + 1:].strip()
+    if not trailing:
+        return False
+    return len(trailing) <= MAX_TRAILING_VALUE_LEN
+
 # A candidate block shorter than this is almost never a real, standalone
 # provision (a stray number, a lone heading word) -- filtered before it
 # ever reaches detect_clause_type. Lower than the old 30-char bar because
@@ -187,6 +232,13 @@ def identify_clauses(full_text: str, page_mapping: Optional[List[Dict[str, Any]]
     type in CLAUSE_RULES via rule_engine.detect_clause_type, keeps the
     single best-scoring type if it clears MIN_CONFIDENCE, then deduplicates
     near-identical results across the document.
+
+    Sprint 3, Issue 2: a block that fails the CLAUSE_RULES gate gets one
+    more chance via _looks_like_structured_field -- a keyword-free,
+    structural test for schedule/table/form content (see its docstring).
+    This never overrides a real category match; it only recovers blocks
+    that would otherwise be silently discarded as "General" with zero
+    corroborating evidence either way.
     """
     identified_clauses = []
     candidate_blocks = _segment_into_clause_candidates(full_text)
@@ -207,7 +259,17 @@ def identify_clauses(full_text: str, page_mapping: Optional[List[Dict[str, Any]]
 
         clause_type, confidence = detect_clause_type(block)
         if clause_type == "General" or confidence < MIN_CONFIDENCE:
-            continue
+            if _looks_like_structured_field(block):
+                # Boundary value, not a graded score: this path is a single
+                # pass/fail structural test, not a summed keyword/regex
+                # signal like detect_clause_type's, so there is no natural
+                # continuous confidence to derive. Reusing MIN_CONFIDENCE
+                # itself (rather than inventing a new number) keeps this
+                # consistent with "cleared the acceptance bar" everywhere
+                # else in this module.
+                clause_type, confidence = STRUCTURED_FIELD_TYPE, MIN_CONFIDENCE
+            else:
+                continue
 
         start_pos = full_text.find(block)
         if start_pos == -1:

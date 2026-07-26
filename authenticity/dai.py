@@ -2,14 +2,16 @@
 factors' scores into one Document Authenticity Index (DAI), 0-100.
 
 Reuses risk_engine.fusion.entropy_weights and risk_engine.thresholds'
-Jenks/ThresholdRegistry machinery verbatim — same fusion MATH as the risk
-engine — but against a completely separate reference corpus and a
-separate ThresholdRegistry instance, per the hard independence constraint
-this whole redesign was built under: a document can be High Authenticity/
-High Risk or the reverse, and nothing in this module ever reads a risk
-field (risk_score, risk_level, dimension_breakdown) — enforced by
-construction (this module has no import of anything under risk_engine/
-except the two pure-math functions named above), not just by convention.
+compute_thresholds (pure Jenks math) verbatim — same fusion MATH as the
+risk engine — but against a completely separate reference corpus and its
+own independently-computed cut points, per the hard independence
+constraint this whole redesign was built under: a document can be High
+Authenticity/High Risk or the reverse, and nothing in this module ever
+reads a risk field (risk_score, risk_level, dimension_breakdown) —
+enforced by construction (this module has no import of anything under
+risk_engine/ except the two pure-math functions named above, never
+risk_engine.thresholds.ThresholdRegistry itself, whose cached instance and
+document-level cuts belong to risk scoring alone), not just by convention.
 
 Where the risk engine's entropy weights vary dimension importance by how
 much each dimension's score varies *across a document's own clauses*,
@@ -21,9 +23,10 @@ clause. A factor that always scores ~1.0 for every real document (little
 discriminative power for telling authentic from suspicious documents
 apart) is automatically down-weighted; a factor whose score actually
 varies across the document population earns more influence — same
-"goodness of variance fit" logic as the risk engine, one level up. With
-fewer than 2 usable historical rows (true today — nothing calls this
-module from the live pipeline yet, so there is no real reference corpus),
+"goodness of variance fit" logic as the risk engine, one level up. Wired
+to a real reference corpus (agents.authenticity_agent now passes
+database.crud.get_recent_document_authenticity_factor_scores()) as of
+2026-07-26 — until an installation has 2+ usable historical rows,
 entropy_weights' own existing n<2 fallback applies: equal weights, the
 same cold-start behavior already tested for the risk engine.
 
@@ -35,10 +38,18 @@ excluded from that document's fusion entirely, weight redistributed among
 the applicable factors, never scored as 0. An inapplicable factor is
 "no evidence," not "bad evidence."
 
-classify_4tier's Low/Medium/High/Critical labels are risk-flavored
-(Critical = worst) and would read backwards for authenticity (higher DAI =
-better, not worse) if reused verbatim, so this module reuses the *cut*
-values but supplies its own authenticity-appropriate tier labels.
+Tier classification (2026-07-26 calibration pass): reuses
+compute_thresholds' Jenks machinery directly rather than going through
+risk_engine.thresholds.ThresholdRegistry.document_thresholds() — that
+method is hardcoded to risk's own n_classes=4 and DEFAULT_DOCUMENT_CUTS,
+neither of which is the right shape for authenticity's 6-tier calibration
+(95/90/80/65/40, matching institutional expectations for how authenticity
+scores should read: a document doesn't need to be "the same as risk's
+High/Critical split" to be classified). DEFAULT_DAI_CUTS below is DAI's
+own disclosed cold-start fallback, used until an installation has 30+
+scored documents (compute_thresholds.MIN_REFERENCE_SIZE) to compute
+data-derived Jenks breaks from, at which point real cuts replace it —
+same cold-start-then-calibrate posture as everywhere else in this engine.
 """
 
 from typing import Any, Dict, List, Optional
@@ -47,7 +58,25 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from risk_engine.fusion import entropy_weights
-from risk_engine.thresholds import DEFAULT_DOCUMENT_CUTS, ThresholdRegistry
+from risk_engine.thresholds import MIN_REFERENCE_SIZE, compute_thresholds
+
+# 6-tier calibration: interior cuts at 40/65/80/90/95, matching the
+# institutional-standard reading of an authenticity score (0-39 Likely
+# Manipulated or Forged, 40-64 Suspicious, 65-79 Mostly Authentic, 80-89
+# Likely Authentic, 90-94 Strongly Authentic, 95-100 Highly Authentic).
+# A disclosed, ablatable cold-start default — same status as risk_engine.
+# thresholds.DEFAULT_DOCUMENT_CUTS — not a claim that these exact numbers
+# are the only defensible choice, just the honest fallback below
+# MIN_REFERENCE_SIZE usable historical scores.
+DEFAULT_DAI_CUTS: tuple = (40.0, 65.0, 80.0, 90.0, 95.0)
+DAI_TIER_LABELS: tuple = (
+    "Likely Manipulated or Forged",
+    "Suspicious",
+    "Mostly Authentic",
+    "Likely Authentic",
+    "Strongly Authentic",
+    "Highly Authentic",
+)
 
 FACTOR_NAMES: List[str] = [
     "structure",
@@ -75,9 +104,10 @@ class FactorContribution(BaseModel):
 
 class DocumentAuthenticityResult(BaseModel):
     dai_score: float = Field(description="0-100. Higher = more authentic-looking.")
-    authenticity_level: str = Field(description="'Authentic' / 'Likely Authentic' / 'Suspicious' / 'Highly Suspicious' / 'Insufficient Signal'")
+    authenticity_level: str = Field(description=f"One of {DAI_TIER_LABELS + ('Insufficient Signal',)}")
     confidence: float = Field(description="0-100, entropy-weighted average of the applicable factors' own confidence")
     weights_data_derived: bool = Field(description="False when weights fell back to equal-weight cold start")
+    tier_cuts_data_derived: bool = Field(default=False, description="False when tier cuts fell back to the fixed cold-start calibration (DEFAULT_DAI_CUTS)")
     contributions: List[FactorContribution] = Field(default_factory=list)
     evidence: List[str] = Field(default_factory=list)
 
@@ -94,21 +124,21 @@ def _select_reference_matrix(reference_corpus: List[Dict[str, float]], factor_na
     return np.array(rows, dtype=float) if rows else np.zeros((0, len(factor_names)))
 
 
-def _classify_authenticity(score: float, cuts) -> str:
-    low_medium, medium_high, high_critical = cuts
-    if score >= high_critical:
-        return "Authentic"
-    if score >= medium_high:
-        return "Likely Authentic"
-    if score >= low_medium:
-        return "Suspicious"
-    return "Highly Suspicious"
+def _classify_authenticity(score: float, cuts: tuple) -> str:
+    """cuts is 5 interior boundaries (low->high); DAI_TIER_LABELS is the
+    matching 6 labels (low->high) -- walks from the top down so a score
+    sitting exactly on a boundary lands in the higher tier, same
+    `score >= cut` convention risk_engine.fusion.classify_4tier uses."""
+    for cut, label in zip(reversed(cuts), reversed(DAI_TIER_LABELS[1:])):
+        if score >= cut:
+            return label
+    return DAI_TIER_LABELS[0]
 
 
 def assess_document_authenticity(
     factor_results: Dict[str, Any],
     reference_corpus: Optional[List[Dict[str, float]]] = None,
-    threshold_registry: Optional[ThresholdRegistry] = None,
+    reference_authenticity_scores: Optional[List[float]] = None,
 ) -> DocumentAuthenticityResult:
     applicable_names = [
         name for name in FACTOR_NAMES
@@ -134,8 +164,10 @@ def assess_document_authenticity(
     dai_score = round(float(100.0 * np.dot(weights, scores)), 2)
     overall_confidence = round(float(np.dot(weights, confidences)), 2)
 
-    cuts = threshold_registry.document_thresholds().cuts if threshold_registry is not None else DEFAULT_DOCUMENT_CUTS
-    level = _classify_authenticity(dai_score, cuts)
+    tier_thresholds = compute_thresholds(
+        reference_authenticity_scores or [], n_classes=6, fallback_cuts=DEFAULT_DAI_CUTS,
+    )
+    level = _classify_authenticity(dai_score, tier_thresholds.cuts)
 
     contributions = [
         FactorContribution(
@@ -157,8 +189,16 @@ def assess_document_authenticity(
         if weights_data_derived else
         "Factor weights used the equal-weight cold-start default (fewer than 2 comparable historical documents)."
     )
+    evidence.append(
+        f"Authenticity tier boundaries were derived from {tier_thresholds.sample_size} prior scored "
+        f"document(s) in this installation's own history."
+        if tier_thresholds.is_data_derived else
+        f"Authenticity tier boundaries used the fixed cold-start calibration "
+        f"(fewer than {MIN_REFERENCE_SIZE} comparable historical documents)."
+    )
 
     return DocumentAuthenticityResult(
         dai_score=dai_score, authenticity_level=level, confidence=overall_confidence,
-        weights_data_derived=weights_data_derived, contributions=contributions, evidence=evidence,
+        weights_data_derived=weights_data_derived, tier_cuts_data_derived=tier_thresholds.is_data_derived,
+        contributions=contributions, evidence=evidence,
     )

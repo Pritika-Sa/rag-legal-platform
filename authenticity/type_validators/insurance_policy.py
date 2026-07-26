@@ -26,6 +26,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from agents.rule_engine import extract_dates, extract_money
+from authenticity.field_matching import id_match_fraction
 from authenticity.type_validators.base import (
     DocumentValidatorFactorResult, EvidenceCheck, aggregate_checks, fuzzy_majority_fraction, weights_for,
 )
@@ -47,7 +48,37 @@ _ISSUER_FALLBACK_RE = re.compile(
     r"\b([A-Z][A-Za-z&.,\- ]{3,60}?(?:General\s+Insurance|Life\s+Insurance|Insurance\s+Company|Assurance)"
     r"[A-Za-z&.,\- ]{0,30})",
 )
-_POLICY_NUMBER_RE = re.compile(r"policy\s*(?:no\.?|number)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-/]{3,})", re.IGNORECASE)
+# Two fixes, both confirmed against the real document that dropped 78->74
+# (2026-07-26 extraction-correctness follow-up):
+# (1) (?-i:...) around the value group -- compiled with re.IGNORECASE for
+#     the "policy no/number" label text, a bare [A-Z0-9...] value class
+#     silently matched lowercase letters too, so a plain word immediately
+#     following the label ("Previous Policy No. Policy Schedule Table 2
+#     (Page 6)", a repeated page header) got captured as a bogus value.
+#     (?-i:...) keeps the label case-insensitive while requiring the
+#     captured VALUE to be genuinely uppercase/digit, which every real
+#     policy number in this domain already is -- same fix applied to
+#     _ENGINE_NO_RE/_CHASSIS_NO_RE/_IRDAI_RE below, the same anti-pattern
+#     found by grepping for every `[A-Z...]` capture group compiled with
+#     re.IGNORECASE in this file and rules/cross_field_rules.json.
+# (2) (?<!previous\s) and (?<!previous) -- a real insurance renewal
+#     document legitimately restates its OWN prior policy number for
+#     reference ("Previous Policy No: OG-23-...") alongside its current one
+#     ("Policy Number: OG-24-..."). Both matched the same "policy
+#     no/number" phrasing, so _check_policy_number's first-match logic was
+#     grabbing the PREVIOUS (wrong) number, and _check_cross_page_consistency
+#     was comparing the previous and current numbers against each other as
+#     if they were the same field restated -- they are two genuinely
+#     different fields, not a tampering signal. TWO lookbehinds, not one:
+#     this real document's page-level text extraction drops inter-word
+#     spaces in places ("PreviousPolicyNo:OG-23-..." with zero spaces
+#     between words -- confirmed by inspecting the actual stored page
+#     text), so both the normally-spaced and the space-dropped variant of
+#     "previous" need their own fixed-width lookbehind.
+_POLICY_NUMBER_RE = re.compile(
+    r"(?<!previous\s)(?<!previous)policy\s*(?:no\.?|number)\s*[:\-]?\s*(?-i:([A-Z0-9][A-Z0-9\-/]{3,}))",
+    re.IGNORECASE,
+)
 _PREMIUM_CONTEXT_RE = re.compile(r"premium", re.IGNORECASE)
 _GST_PCT_RE = re.compile(r"(?:gst|tax)[^\d%\n]{0,15}(\d{1,2}(?:\.\d+)?)\s?%", re.IGNORECASE)
 _BASE_PREMIUM_RE = re.compile(r"(?:net|base)\s+premium[^\d\n]{0,25}([\d,]+(?:\.\d+)?)", re.IGNORECASE)
@@ -65,13 +96,13 @@ _VEHICLE_KEYWORD_RE = re.compile(
     r"\b(vehicle|motor\s+insurance|registration\s+number|engine\s+no|chassis\s+no)\b", re.IGNORECASE,
 )
 _REG_PLATE_RE = re.compile(r"\b[A-Z]{2}[\s\-]?\d{1,2}[\s\-]?[A-Z]{1,3}[\s\-]?\d{3,4}\b")
-_ENGINE_NO_RE = re.compile(r"engine\s*(?:no\.?|number)\s*[:\-]?\s*([A-Z0-9]{5,20})", re.IGNORECASE)
-_CHASSIS_NO_RE = re.compile(r"chassis\s*(?:no\.?|number)\s*[:\-]?\s*([A-Z0-9]{5,20})", re.IGNORECASE)
+_ENGINE_NO_RE = re.compile(r"engine\s*(?:no\.?|number)\s*[:\-]?\s*(?-i:([A-Z0-9]{5,20}))", re.IGNORECASE)
+_CHASSIS_NO_RE = re.compile(r"chassis\s*(?:no\.?|number)\s*[:\-]?\s*(?-i:([A-Z0-9]{5,20}))", re.IGNORECASE)
 _RECEIPT_RE = re.compile(
     r"\b(receipt\s*(?:no\.?|number)|payment\s+receipt|transaction\s*id|premium\s+received)\b", re.IGNORECASE,
 )
 _IRDAI_RE = re.compile(
-    r"irda[i]?\s*(?:reg(?:istration)?\.?\s*(?:no\.?|number)?)?\s*[:\-]?\s*([A-Z0-9\-/]{3,20})", re.IGNORECASE,
+    r"irda[i]?\s*(?:reg(?:istration)?\.?\s*(?:no\.?|number)?)?\s*[:\-]?\s*(?-i:([A-Z0-9\-/]{3,20}))", re.IGNORECASE,
 )
 _POLICY_PERIOD_CONTEXT_RE = re.compile(r"(?:policy\s*period|period\s*of\s*insurance)[^\n]{0,80}", re.IGNORECASE)
 _COMMENCEMENT_CONTEXT_RE = re.compile(
@@ -370,12 +401,18 @@ def _check_cross_page_consistency(pages: List[Dict[str, Any]]) -> EvidenceCheck:
             reason="The policy number needs to recur on 2+ pages to check cross-page consistency.",
         )
 
-    fraction = fuzzy_majority_fraction(per_page_numbers)
+    # 2026-07-26 audit follow-up: the policy number is an opaque ID, not a
+    # name -- switched from the generic character-similarity
+    # fuzzy_majority_fraction (threshold 0.5, too loose for value-tampering
+    # detection, see authenticity/field_matching.py's module docstring) to
+    # id_match_fraction (Levenshtein edit-distance, max 1 edit), tighter
+    # while still tolerating a single-character OCR misread.
+    fraction = id_match_fraction(per_page_numbers)
     if fraction >= 1.0:
         return EvidenceCheck(
             name="cross_page_consistency", passed=True, confidence=0.85, applicable=True,
             evidence=f"Policy number consistent across {len(per_page_numbers)} pages: '{per_page_numbers[0]}'.",
-            reason="Every page-level occurrence of the policy number fuzzy-matched the majority value.",
+            reason="Every page-level occurrence of the policy number matched the majority value within OCR tolerance.",
         )
     return EvidenceCheck(
         name="cross_page_consistency", passed=False, confidence=0.85, applicable=True,

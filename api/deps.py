@@ -1,7 +1,18 @@
 from fastapi import HTTPException, Request, status
 
-from api.config import AUTH_COOKIE_NAME
+from api.config import AUTH_COOKIE_NAME, IS_PRODUCTION, SERVER_INSTANCE_ID
 from api.security import decode_access_token
+
+
+class StaleServerInstanceError(HTTPException):
+    """Dev-only: raised when a JWT's server_instance_id doesn't match this
+    process's SERVER_INSTANCE_ID (i.e. it was issued before a server
+    restart). A dedicated type so main.py's exception handler can clear the
+    stale cookie before returning 401, without duplicating that logic at
+    every raise site."""
+
+    def __init__(self):
+        super().__init__(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session")
 
 
 def get_current_user(request: Request) -> dict:
@@ -17,5 +28,8 @@ def get_current_user(request: Request) -> dict:
     user = decode_access_token(token)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session")
+
+    if not IS_PRODUCTION and user.get("server_instance_id") != SERVER_INSTANCE_ID:
+        raise StaleServerInstanceError()
 
     return user

@@ -31,12 +31,28 @@ noise (a dash dropped, a stray character) can make two mentions of the
 after normalization treated every one of those OCR slips as forgery
 evidence — a real false-positive caught by testing against an actual
 scanned document, not a synthetic one. Each occurrence is now scored
-against the field's majority ("mode") value using the same fuzzy-match
-threshold agents.feature_extraction_agent already established
-(_SUBJECT_AGREEMENT_RATIO) for "same real-world thing, worded slightly
-differently" — reused here rather than inventing a second threshold — and
-a field's contribution to the score is the *fraction* of its occurrences
-that agree with the majority, not a binary all-or-nothing verdict.
+against the field's majority ("mode") value, and a field's contribution to
+the score is the *fraction* of its occurrences that agree with the
+majority, not a binary all-or-nothing verdict.
+
+2026-07-26 audit follow-up: the "agree with the majority" comparator used
+to always be the fuzzy character-similarity ratio (SequenceMatcher,
+threshold 0.5) agents.feature_extraction_agent established for a
+DIFFERENT purpose (matching a dependency-parse subject against a
+regex-extracted one). Reused here for value-equality, that same threshold
+was too loose to actually catch tampering: '5,00,000' vs '9,00,000' (an
+80% different amount) scores 0.833 on that ratio -- comfortably "matching"
+despite being a materially different value, confirmed as a real false
+positive against a tampered insurance policy during the audit. Fields now
+carry a disclosed `kind` in rules/cross_field_rules.json ('money' or 'id');
+authenticity/field_matching.py's numeric_match_fraction (parses to a float,
+compares the actual value within a small relative tolerance) or
+id_match_fraction (Levenshtein edit-distance, tighter than the retired
+ratio) is used instead of blanket fuzzy matching wherever a field declares
+one. A field with no declared kind keeps the original fuzzy-match behavior
+unchanged (kept for anything not yet classified as money/id -- e.g. a
+future free-text field where character-similarity really is the right
+tool).
 """
 
 import json
@@ -44,23 +60,34 @@ import re
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, NamedTuple, Optional
 
 from pydantic import BaseModel, Field
 
 from agents.feature_extraction_agent import _SUBJECT_AGREEMENT_RATIO
+from authenticity.field_matching import id_match_fraction, numeric_match_fraction
 from services.document_classifier import DocumentTypeClassification
 from utils.confidence import evidence_confidence
 
 _RULES_PATH = Path(__file__).resolve().parent.parent / "rules" / "cross_field_rules.json"
 
 
-def _load_compiled_rules() -> Dict[str, List[Tuple[str, "re.Pattern"]]]:
+class _FieldRule(NamedTuple):
+    name: str
+    pattern: "re.Pattern"
+    kind: Optional[str]  # 'money' | 'id' | None (None = original fuzzy-match behavior)
+
+
+def _load_compiled_rules() -> Dict[str, List[_FieldRule]]:
     with _RULES_PATH.open(encoding="utf-8") as f:
         raw = json.load(f)
     return {
-        doc_type: [(field["name"], re.compile(field["pattern"], re.IGNORECASE)) for field in fields]
+        doc_type: [
+            _FieldRule(field["name"], re.compile(field["pattern"], re.IGNORECASE), field.get("kind"))
+            for field in fields
+        ]
         for doc_type, fields in raw.items()
+        if not doc_type.startswith("_")
     }
 
 
@@ -78,10 +105,28 @@ def _fuzzy_match(a: str, b: str) -> bool:
 def _majority_match_fraction(normalized_values: List[str]) -> float:
     """Fraction of occurrences that fuzzy-match the field's most common
     ("mode") value -- tolerant of OCR noise between two mentions of what
-    is really the same value, rather than requiring byte-exact equality."""
+    is really the same value, rather than requiring byte-exact equality.
+    Fallback comparator for any field with no declared `kind`."""
     mode_value, _ = Counter(normalized_values).most_common(1)[0]
     matches = sum(1 for v in normalized_values if _fuzzy_match(v, mode_value))
     return matches / len(normalized_values)
+
+
+def _field_match_fraction(kind: Optional[str], raw_matches: List[str], normalized_values: List[str]) -> float:
+    """Dispatches to the field-aware comparator declared by `kind` ('money'
+    -> numeric relative-tolerance, 'id' -> edit-distance) per the 2026-07-26
+    audit follow-up, falling back to the original fuzzy character-similarity
+    comparator for any field with no declared kind, or defensively if a
+    'money' field's captured values unexpectedly fail to parse as numbers
+    (should not happen for a regex group that only captures digit runs, but
+    a parse failure must degrade gracefully, not crash the whole factor)."""
+    if kind == "money":
+        fraction = numeric_match_fraction(raw_matches)
+        if fraction is not None:
+            return fraction
+    elif kind == "id":
+        return id_match_fraction(raw_matches)
+    return _majority_match_fraction(normalized_values)
 
 
 class FieldCheckResult(BaseModel):
@@ -112,26 +157,28 @@ def assess_cross_field_consistency(full_text: str, classification: DocumentTypeC
     evidence: List[str] = []
     field_scores: List[float] = []
 
-    for field_name, pattern in fields:
+    for field_rule in fields:
+        field_name, pattern, kind = field_rule.name, field_rule.pattern, field_rule.kind
         raw_matches = pattern.findall(text)
         if len(raw_matches) < 2:
             continue
         normalized_values = [_normalize_value(v) for v in raw_matches]
-        match_fraction = _majority_match_fraction(normalized_values)
+        match_fraction = _field_match_fraction(kind, raw_matches, normalized_values)
         field_scores.append(match_fraction)
         unique_values = sorted(set(normalized_values))
+        comparator_note = f" [{kind}-aware comparison]" if kind else ""
 
         if len(unique_values) == 1:
             evidence.append(f"CONSISTENT: '{field_name}' appears {len(raw_matches)}x with the same value.")
         elif match_fraction >= 1.0:
             evidence.append(
                 f"CONSISTENT (minor formatting variation only): '{field_name}' appears {len(raw_matches)}x; "
-                f"variants {unique_values} all fuzzy-match one another."
+                f"variants {unique_values} all match within tolerance{comparator_note}."
             )
         else:
             evidence.append(
                 f"INCONSISTENT: '{field_name}' appears {len(raw_matches)}x; only {match_fraction:.0%} of "
-                f"occurrences agree with each other: {unique_values}."
+                f"occurrences agree with each other: {unique_values}{comparator_note}."
             )
         checked.append(FieldCheckResult(
             field_name=field_name, occurrences=raw_matches,

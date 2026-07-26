@@ -1152,7 +1152,7 @@ if st.session_state.chat_open:
 
         if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.spinner("Agent 9 is retrieving and validating answers…"):
+            with st.spinner("Legal AI is analyzing your question…"):
                 try:
                     from agents.qa_agent import answer_legal_question
                     doc_id_str = str(target_doc_id) if target_doc_id else None

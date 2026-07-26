@@ -7,6 +7,80 @@
       {"name": "Signature", "patterns": ["\\bsign(?:ed|ature)?\\b", "in witness whereof"]}
     ]
   },
+  "generic_document_agnostic": {
+    "_comment": "2026-07-26 audit follow-up: used ONLY for classification.document_type == UNKNOWN_DOCUMENT_TYPE (see authenticity/structure.py) -- NOT for classified-but-template-less types, which still use generic_minimal unchanged. Deliberately does not require contract-shaped language ('between X and Y' parties, 'in witness whereof' signatures) that a genuine invoice/receipt/certificate/ID would never contain -- 3 sections, each a real, document-type-neutral signal (an identifying heading/issuer, a reference number, a date), not padded to 4 with a weak always-true check.",
+    "sections": [
+      {"name": "Heading/Issuer", "patterns": ["\\b(?:agreement|policy|contract|deed|invoice|receipt|certificate|statement|notification|order|report|record|licen[cs]e|passport)\\b", "\\b(?:company|corporation|ltd\\.?|limited|inc\\.?|llc|department|ministry|government|hospital|university|banking|authority|institute)\\b"]},
+      {"name": "Reference/Identifier", "patterns": ["\\b(?:no\\.?|number|ref(?:erence)?\\.?|id)\\s*[:\\-]?\\s*[A-Z0-9]"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}", "\\d{4}-\\d{2}-\\d{2}", "\\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\\b"]}
+    ]
+  },
+  "Invoice": {
+    "sections": [
+      {"name": "Title", "patterns": ["\\binvoice\\b", "\\bbill\\b"]},
+      {"name": "Invoice Number", "patterns": ["invoice\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Billed To", "patterns": ["\\bbill(?:ed)?\\s+to\\b", "\\bcustomer\\b", "\\bclient\\b"]},
+      {"name": "Amount/Total", "patterns": ["\\btotal\\b", "\\bamount\\b", "\\bsubtotal\\b"]}
+    ]
+  },
+  "Receipt": {
+    "sections": [
+      {"name": "Title", "patterns": ["\\breceipt\\b"]},
+      {"name": "Receipt Number", "patterns": ["receipt\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Amount", "patterns": ["\\bamount\\b"]},
+      {"name": "Received From", "patterns": ["received\\s+from", "\\bpayer\\b"]}
+    ]
+  },
+  "Medical Record": {
+    "sections": [
+      {"name": "Facility/Header", "patterns": ["\\bhospital\\b", "\\bclinic\\b", "discharge\\s+summary", "medical\\s+record"]},
+      {"name": "Patient Identifier", "patterns": ["\\bpatient\\s*(?:id|name|no\\.?|number)\\b"]},
+      {"name": "Date", "patterns": ["date\\s+of\\s+admission", "date\\s+of\\s+discharge", "\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Diagnosis/Treatment", "patterns": ["\\bdiagnosis\\b", "\\btreatment\\b"]}
+    ]
+  },
+  "Bank Statement": {
+    "sections": [
+      {"name": "Title", "patterns": ["account\\s+statement", "\\bbank\\b"]},
+      {"name": "Account Number", "patterns": ["account\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Statement Period", "patterns": ["statement\\s+period", "\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Balance", "patterns": ["\\bbalance\\b"]}
+    ]
+  },
+  "Identity Document": {
+    "sections": [
+      {"name": "Title", "patterns": ["\\bpassport\\b", "\\bidentity\\b", "driving\\s+licen[cs]e", "\\baadhaar\\b"]},
+      {"name": "ID Number", "patterns": ["\\b(?:passport|id|licen[cs]e)\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Name", "patterns": ["\\bname\\b", "\\bsurname\\b"]},
+      {"name": "Date of Birth/Issue", "patterns": ["date\\s+of\\s+birth", "date\\s+of\\s+issue", "date\\s+of\\s+expiry"]}
+    ]
+  },
+  "Certificate": {
+    "sections": [
+      {"name": "Title", "patterns": ["\\bcertificate\\b", "certify\\s+that", "this\\s+is\\s+to\\s+certify"]},
+      {"name": "Certificate Number", "patterns": ["certificate\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Date", "patterns": ["date\\s+of\\s+issue", "\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Issuing Authority", "patterns": ["\\buniversity\\b", "\\bregistrar\\b", "\\bauthority\\b", "issued\\s+by"]}
+    ]
+  },
+  "Purchase Order": {
+    "sections": [
+      {"name": "Title", "patterns": ["purchase\\s+order"]},
+      {"name": "PO Number", "patterns": ["\\bpo\\s*(?:no\\.?|number)\\s*[:\\-]?\\s*\\w"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Vendor/Amount", "patterns": ["\\bvendor\\b", "\\btotal\\b", "\\bamount\\b"]}
+    ]
+  },
+  "Government Notice": {
+    "sections": [
+      {"name": "Title", "patterns": ["\\bnotification\\b", "government\\s+of", "\\bcircular\\b"]},
+      {"name": "Reference Number", "patterns": ["\\b(?:no\\.?|number|ref(?:erence)?\\.?)\\s*[:\\-]?\\s*[A-Z0-9]"]},
+      {"name": "Date", "patterns": ["\\bdated?\\b", "\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4}"]},
+      {"name": "Issuing Authority", "patterns": ["\\bgovernor\\b", "\\bsecretary\\b", "\\bdepartment\\b", "\\bministry\\b"]}
+    ]
+  },
   "Insurance Policy": {
     "sections": [
       {"name": "Title", "patterns": ["insurance policy", "policy schedule", "policy document"]},

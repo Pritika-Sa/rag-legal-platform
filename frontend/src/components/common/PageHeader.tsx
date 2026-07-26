@@ -24,17 +24,19 @@ export function PageHeader({ icon, title, subtitle, badge, docName }: PageHeader
         justifyContent: "space-between",
         flexWrap: "wrap",
         gap: 2,
-        pb: 1.75,
-        mb: 2.5,
-        borderBottom: "1px solid",
-        borderColor: "divider",
+        p: { xs: 2, sm: 2.5 },
+        mb: 3,
+        border: "1px solid #e6e9f0",
+        borderRadius: 3,
+        bgcolor: "#fff",
+        boxShadow: "0 2px 10px rgba(20, 31, 61, 0.04)",
       }}
     >
       <Stack direction="row" sx={{ alignItems: "center", gap: 1.5, minWidth: 0 }}>
-        <Box sx={{ fontSize: "1.5rem", lineHeight: 1, flexShrink: 0 }}>{icon}</Box>
+        <Box sx={{ fontSize: "1.35rem", lineHeight: 1, flexShrink: 0, display: "grid", placeItems: "center", width: 42, height: 42, borderRadius: 2, bgcolor: "rgba(99, 110, 250, 0.10)" }}>{icon}</Box>
         <Box sx={{ minWidth: 0 }}>
           <Stack direction="row" sx={{ alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
-            <Typography variant="h5" sx={{ fontSize: "1.3rem", m: 0 }}>
+            <Typography variant="h5" sx={{ fontSize: "1.35rem", m: 0, letterSpacing: "-0.02em" }}>
               {title}
             </Typography>
             {badge && (
@@ -54,7 +56,7 @@ export function PageHeader({ icon, title, subtitle, badge, docName }: PageHeader
               />
             )}
           </Stack>
-          <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.65, maxWidth: 820 }}>
+          <Typography variant="body2" sx={{ mt: 0.5, color: "text.secondary", maxWidth: 820 }}>
             {subtitle}
           </Typography>
         </Box>

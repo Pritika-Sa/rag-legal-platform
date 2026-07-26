@@ -8,8 +8,12 @@ Run with:  python -m unittest discover -s tests
 
 import unittest
 
-from authenticity.structure import GENERIC_MINIMAL_KEY, assess_structure
-from services.document_classifier import DocumentTypeClassification, classify_document_type_ranked
+from authenticity.structure import GENERIC_DOCUMENT_AGNOSTIC_KEY, GENERIC_MINIMAL_KEY, assess_structure
+from services.document_classifier import (
+    UNKNOWN_DOCUMENT_TYPE,
+    DocumentTypeClassification,
+    classify_document_type_ranked,
+)
 
 GOOD_INSURANCE_POLICY = """
 INSURANCE POLICY
@@ -100,12 +104,36 @@ class ScoreConfidenceDecouplingTests(unittest.TestCase):
 
 
 class NoTemplateFallbackTests(unittest.TestCase):
-    def test_unknown_document_type_falls_back_to_generic(self):
+    def test_unknown_document_type_falls_back_to_document_agnostic_not_contract_template(self):
+        # 2026-07-26 audit follow-up: a genuinely Unknown document must no
+        # longer be scored against the contract-shaped generic_minimal
+        # template (Title=agreement/policy/contract/deed, Parties="between
+        # X and Y", Signature="in witness whereof") -- a genuine invoice,
+        # receipt, or ID legitimately has none of that language, which is
+        # exactly what caused every unrecognized document type to score
+        # "Likely Manipulated or Forged" regardless of genuineness.
         classification = classify_document_type_ranked(UNRELATED_TEXT)
         result = assess_structure(UNRELATED_TEXT, classification)
-        self.assertEqual(result.template_used, GENERIC_MINIMAL_KEY)
+        self.assertEqual(result.template_used, GENERIC_DOCUMENT_AGNOSTIC_KEY)
         self.assertAlmostEqual(result.score, 0.0)
         self.assertAlmostEqual(result.confidence, 0.0)
+
+    def test_document_agnostic_fallback_does_not_require_contract_language(self):
+        # A genuine, well-formed but non-contract, non-registered document
+        # (no "agreement/policy/contract" title word, no "between X and Y"
+        # parties, no "in witness whereof" signature) should still score
+        # well against the document-agnostic template purely on heading +
+        # reference number + date -- the concrete case this fallback exists
+        # to fix.
+        text = "CITY MUNICIPAL AUTHORITY\nNotice Ref: NOT-2024-771\nDated: 5th May 2024\nBy order of the Authority."
+        # Force the Unknown path directly to exercise the fallback template
+        # itself, independent of whatever the classifier happens to make of
+        # this particular sentence (that's covered by test_document_classifier.py).
+        unknown_classification = DocumentTypeClassification(document_type=UNKNOWN_DOCUMENT_TYPE, confidence=0.0)
+        result = assess_structure(text, unknown_classification)
+        self.assertEqual(result.template_used, GENERIC_DOCUMENT_AGNOSTIC_KEY)
+        self.assertEqual(result.missing_sections, [])
+        self.assertAlmostEqual(result.score, 1.0)
 
     def test_registered_type_with_no_structure_template_falls_back_to_generic(self):
         # A document type the classifier knows about but that has no entry

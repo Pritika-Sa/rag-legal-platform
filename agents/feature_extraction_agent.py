@@ -111,6 +111,22 @@ def _polarity_for(modal_lemma: str, negated: bool) -> Polarity:
     return Polarity.RIGHT
 
 
+def _has_prose_verb(doc) -> bool:
+    """True if `doc` contains at least one finite verb or auxiliary (POS
+    tag VERB or AUX) anywhere — a cheap, content-agnostic proxy for "is
+    this clause prose attempting to state something" versus a
+    structured/tabular data field (a label, a key:value row, a bare
+    figure) that was never prose to begin with. Reuses the spaCy parse
+    already computed for obligation extraction below — no new parse pass,
+    no keyword list. Feeds risk_engine.dimensions._ambiguity_feature_signal's
+    prose gate (Sprint 2B, Issue 1): a clause with no verb at all cannot be
+    meaningfully assessed for modal hedging, because there is no
+    commitment language to hedge in the first place. An empty document
+    (blank/whitespace-only text) correctly returns False via `any()` over
+    zero tokens."""
+    return any(tok.pos_ in ("VERB", "AUX") for tok in doc)
+
+
 def _find_subject(verb_token):
     """Direct nsubj/nsubjpass child of `verb_token`, or — for a coordinated
     verb whose subject was elided ('X shall A and shall not B and shall C')
@@ -254,16 +270,39 @@ def _capped_flag(text_lower: str) -> Optional[bool]:
     return None
 
 
+def _safe_float(numeric_str: str) -> Optional[float]:
+    """Converts a money-regex numeric match to a float, never raising.
+    Returns None (never 0.0 or any other fabricated value) rather than
+    crashing when `numeric_str`, after stripping thousands-separator
+    commas, contains no actual digit — the character classes used to find
+    it ([\\d,]+ / [\\d,.]+) are satisfied by punctuation alone (e.g. a bare
+    "," from a malformed upstream match), which is not a real amount.
+    Defense-in-depth alongside the _MONEY_RE word-boundary fix (Sprint
+    2D): that fix removes the one confirmed source of such matches, this
+    guard means a future change to the extraction regex, or any other
+    caller of this function, still can never crash feature extraction.
+    A None amount is already treated identically to 'no match found'
+    everywhere downstream (see risk_engine.dimensions._financial_raw's
+    `if ft.amount` filter) — nothing else needs to change."""
+    cleaned = numeric_str.replace(",", "")
+    if not any(ch.isdigit() for ch in cleaned):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 def _parse_money_string(raw: str) -> FinancialTerm:
     s = raw.strip()
     if s.endswith("%"):
         num_match = re.search(r"[\d,.]+", s)
-        amount = float(num_match.group().replace(",", "")) if num_match else None
+        amount = _safe_float(num_match.group()) if num_match else None
         return FinancialTerm(amount=amount, currency=None, is_percentage=True)
 
     currency = next((code for prefix, code in _CURRENCY_PREFIXES if s.startswith(prefix)), None)
     num_match = re.search(r"[\d,]+(?:\.\d+)?", s)
-    amount = float(num_match.group().replace(",", "")) if num_match else None
+    amount = _safe_float(num_match.group()) if num_match else None
     scale = next((mult for word, mult in _SCALE_WORDS.items() if word in s.lower()), 1)
     if amount is not None:
         amount *= scale
@@ -349,6 +388,7 @@ def extract_legal_features(clause_id: int, text: str) -> LegalFeatureVector:
         legal_actions=extract_legal_actions(doc),
         jurisdiction=extract_jurisdiction(text or ""),
         dependencies=[],  # filled in by extract_legal_features_batch below
+        has_prose_verb=_has_prose_verb(doc),
     )
 
 

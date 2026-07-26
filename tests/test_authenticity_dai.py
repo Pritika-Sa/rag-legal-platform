@@ -69,21 +69,41 @@ class NotApplicableExclusionTests(unittest.TestCase):
 
 
 class ClassificationTierTests(unittest.TestCase):
-    def test_high_score_is_authentic(self):
-        result = assess_document_authenticity(_all_factors(0.9))
-        self.assertEqual(result.authenticity_level, "Authentic")
+    """6-tier cold-start calibration (DEFAULT_DAI_CUTS = 40/65/80/90/95),
+    one test per tier plus both boundaries of the two tiers the old 4-tier
+    scheme couldn't distinguish (90-94 vs 95-100, and the 65 vs 60 split)."""
 
-    def test_mid_high_score_is_likely_authentic(self):
-        result = assess_document_authenticity(_all_factors(0.7))
+    def test_top_score_is_highly_authentic(self):
+        result = assess_document_authenticity(_all_factors(0.97))
+        self.assertEqual(result.authenticity_level, "Highly Authentic")
+
+    def test_exactly_95_is_highly_authentic(self):
+        result = assess_document_authenticity(_all_factors(0.95))
+        self.assertEqual(result.authenticity_level, "Highly Authentic")
+
+    def test_92_is_strongly_authentic_not_highly(self):
+        result = assess_document_authenticity(_all_factors(0.92))
+        self.assertEqual(result.authenticity_level, "Strongly Authentic")
+
+    def test_85_is_likely_authentic(self):
+        result = assess_document_authenticity(_all_factors(0.85))
         self.assertEqual(result.authenticity_level, "Likely Authentic")
+
+    def test_70_is_mostly_authentic(self):
+        result = assess_document_authenticity(_all_factors(0.70))
+        self.assertEqual(result.authenticity_level, "Mostly Authentic")
 
     def test_mid_score_is_suspicious(self):
         result = assess_document_authenticity(_all_factors(0.5))
         self.assertEqual(result.authenticity_level, "Suspicious")
 
-    def test_low_score_is_highly_suspicious(self):
+    def test_low_score_is_likely_manipulated_or_forged(self):
         result = assess_document_authenticity(_all_factors(0.2))
-        self.assertEqual(result.authenticity_level, "Highly Suspicious")
+        self.assertEqual(result.authenticity_level, "Likely Manipulated or Forged")
+
+    def test_cold_start_tier_cuts_are_not_data_derived(self):
+        result = assess_document_authenticity(_all_factors(0.9))
+        self.assertFalse(result.tier_cuts_data_derived)
 
 
 class ReferenceCorpusEntropyWeightTests(unittest.TestCase):
@@ -117,6 +137,35 @@ class ReferenceCorpusEntropyWeightTests(unittest.TestCase):
         reference_corpus = [{"structure": 0.5}] * 40  # missing every other factor
         result = assess_document_authenticity(_all_factors(0.6), reference_corpus=reference_corpus)
         self.assertFalse(result.weights_data_derived)
+
+
+class ReferenceScoresTierCalibrationTests(unittest.TestCase):
+    """authenticity/dai.py's tier boundaries (Requirement #12's 6-tier
+    calibration) are Jenks-derived from real DAI score history once an
+    installation has MIN_REFERENCE_SIZE (30) scored documents, exactly
+    mirroring risk_engine.thresholds' own cold-start-then-calibrate
+    posture -- these tests are dai.py's analogue of
+    risk_engine/tests/test_thresholds.py's Jenks-vs-fallback coverage."""
+
+    def test_below_min_reference_size_falls_back_to_default_cuts(self):
+        result = assess_document_authenticity(_all_factors(0.9), reference_authenticity_scores=[50.0] * 29)
+        self.assertFalse(result.tier_cuts_data_derived)
+        # DEFAULT_DAI_CUTS' 90 boundary: a score of exactly 90 lands in
+        # "Strongly Authentic", one tier below "Highly Authentic" (95+).
+        self.assertEqual(result.authenticity_level, "Strongly Authentic")
+
+    def test_sufficient_reference_history_uses_data_derived_tier_cuts(self):
+        # Two well-separated clusters of historical DAI scores (~20-30 and
+        # ~85-95, 20 documents each) should make Jenks carve a real break
+        # somewhere in the wide gap between them, distinct from the fixed
+        # cold-start cuts.
+        rng = np.random.default_rng(7)
+        low_cluster = rng.uniform(20.0, 30.0, 20).tolist()
+        high_cluster = rng.uniform(85.0, 95.0, 20).tolist()
+        result = assess_document_authenticity(
+            _all_factors(0.9), reference_authenticity_scores=low_cluster + high_cluster,
+        )
+        self.assertTrue(result.tier_cuts_data_derived)
 
 
 if __name__ == "__main__":

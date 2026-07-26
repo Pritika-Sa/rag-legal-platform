@@ -209,6 +209,63 @@ def get_recent_document_risk_scores(limit=500):
         return []
 
 
+def get_recent_document_authenticity_scores(limit=500):
+    """Same idea as get_recent_document_risk_scores but for
+    documents.authenticity_score, used by authenticity.dai to compute
+    data-derived 6-tier authenticity classification cuts (Jenks natural
+    breaks) instead of always falling back to the fixed cold-start bands.
+    Same fail-safe: returns [] on any DB error rather than raising."""
+    try:
+        db = get_db()
+        docs = db.documents.find(
+            {"authenticity_score": {"$ne": None}}, {"authenticity_score": 1, "_id": 0}
+        ).sort("id", -1).limit(limit)
+        return [d["authenticity_score"] for d in docs]
+    except Exception:
+        logger.exception("Failed to fetch reference document authenticity scores; tier calibration will fall back to fixed defaults")
+        return []
+
+
+def get_recent_document_authenticity_factor_scores(limit=500):
+    """Sample of persisted per-factor authenticity scores across every
+    document (documents.authenticity_factors, written by
+    agents.authenticity_agent.assess_and_persist_document_authenticity), used
+    by authenticity.dai's entropy-weight fusion to derive which of the 8
+    factors actually vary across this installation's own document history
+    -- the reference corpus that lets Dynamic Weighting be genuinely
+    data-derived instead of perpetually falling back to equal weights.
+
+    Reshapes each document's stored `authenticity_factors` (a list of
+    {name, applicable, score, ...} dicts, one per factor) into the
+    {factor_name: score} row shape authenticity.dai._select_reference_matrix
+    expects, keeping only applicable (score is not None) factors -- a
+    factor that was not applicable for a past document must not silently
+    contribute a fabricated 0.0 into another document's weight calculation.
+
+    Returns [] on any DB error instead of raising: a transient MongoDB
+    hiccup while fetching *reference data for a weight recalibration* must
+    never break authenticity scoring itself -- same posture as
+    get_recent_document_risk_scores."""
+    try:
+        db = get_db()
+        docs = db.documents.find(
+            {"authenticity_factors": {"$ne": None}}, {"authenticity_factors": 1, "_id": 0}
+        ).sort("id", -1).limit(limit)
+        rows = []
+        for d in docs:
+            row = {
+                f["name"]: f["score"]
+                for f in (d.get("authenticity_factors") or [])
+                if f.get("applicable") and f.get("score") is not None
+            }
+            if row:
+                rows.append(row)
+        return rows
+    except Exception:
+        logger.exception("Failed to fetch reference document authenticity factor scores; weight recalibration will fall back to equal weights")
+        return []
+
+
 def update_clause_title(clause_id, section_name):
     """Overwrites just a clause's display title (section_name) — used to
     backfill clauses ingested before clause_title generation existed, whose
@@ -496,15 +553,23 @@ def get_dashboard_metrics(doc_id, user_id=None):
             "risky_clauses": 0, "risk_distribution": {},
         }
 
-    total_clauses = db.clauses.count_documents({"doc_id": doc_id})
+    # 2026-07-27 clause-extraction fix: table-row/form-field content
+    # (Policy Number, IDV, Nominee Name, ...) is persisted with
+    # classification="Structured Field" (see agents.clause_identifier_agent)
+    # rather than discarded, so it stays visible in the clause list --  but
+    # it must not inflate the dashboard's legal-clause metrics. Excluded
+    # from every count/aggregate below so total_clauses, risky_clauses, and
+    # risk_distribution all describe the same "legal clauses" population.
+    legal_clause_query = {"doc_id": doc_id, "classification": {"$ne": "Structured Field"}}
+    total_clauses = db.clauses.count_documents(legal_clause_query)
     total_contradictions = db.contradictions.count_documents({"doc_id": doc_id})
     risky_clauses = db.clauses.count_documents({
-        "doc_id": doc_id,
+        **legal_clause_query,
         "risk_level": {"$in": ["High", "Medium"]},
     })
 
     pipeline = [
-        {"$match": {"doc_id": doc_id}},
+        {"$match": legal_clause_query},
         {"$group": {"_id": "$risk_level", "count": {"$sum": 1}}},
     ]
     risk_dist = {r["_id"]: r["count"] for r in db.clauses.aggregate(pipeline)}

@@ -13,7 +13,7 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme} defaultMode="system">
+      <ThemeProvider theme={theme} defaultMode="light">
         <CssBaseline />
         <BrowserRouter>
           <AppRouter />

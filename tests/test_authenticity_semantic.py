@@ -9,7 +9,7 @@ Run with:  python -m unittest discover -s tests
 
 import unittest
 
-from authenticity.semantic import assess_semantic_consistency
+from authenticity.semantic import _calibrate_similarity, assess_semantic_consistency
 
 MATCHED_CLAUSE = {
     "section_name": "Termination",
@@ -46,10 +46,28 @@ class HeadingBodyMatchTests(unittest.TestCase):
         self.assertTrue(mismatched_result.applicable)
         self.assertGreater(matched_result.score, mismatched_result.score)
 
-    def test_document_score_is_mean_of_clause_similarities(self):
+    def test_document_score_is_mean_of_calibrated_clause_similarities(self):
+        # 2026-07-26 audit follow-up: `checked[i].similarity` reports the
+        # RAW cosine similarity (honest, directly-interpretable per-clause
+        # evidence); the factor SCORE is the mean of the CALIBRATED values
+        # (see authenticity/semantic.py's SEMANTIC_SIMILARITY_FLOOR/CEILING)
+        # so it's on the same 0-1 "authenticity fraction" scale as the other
+        # 7 factors, not raw embedding-model output.
         result = assess_semantic_consistency([MATCHED_CLAUSE, MISMATCHED_CLAUSE])
-        expected = round(sum(c.similarity for c in result.checked) / len(result.checked), 4)
+        expected = round(
+            sum(_calibrate_similarity(c.similarity) for c in result.checked) / len(result.checked), 4,
+        )
         self.assertAlmostEqual(result.score, expected, places=4)
+
+    def test_calibration_maps_a_genuinely_matched_clause_near_the_top(self):
+        # Regression for the actual audit finding: two real, complete,
+        # correctly-clause-tagged genuine documents (a Loan Agreement and an
+        # NDA) scored raw mean similarity 0.45-0.49 during the audit --
+        # nowhere near 1.0 despite being genuinely well-formed, dragging
+        # their overall DAI score down. A clearly matched pair's calibrated
+        # score must now read as strongly consistent, not middling.
+        result = assess_semantic_consistency([MATCHED_CLAUSE])
+        self.assertGreaterEqual(result.score, 0.9)
 
     def test_evidence_names_the_lowest_matching_clause(self):
         result = assess_semantic_consistency([MATCHED_CLAUSE, MISMATCHED_CLAUSE])

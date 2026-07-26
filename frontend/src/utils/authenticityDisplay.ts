@@ -12,11 +12,19 @@ export const AUTHENTICITY_FACTOR_DISPLAY: Record<string, [string, string]> = {
   document_type_validator: ["🧾", "Document-Type Checks"],
 };
 
+// 2026-07-26 calibration pass: authenticity/dai.py now classifies into 6
+// tiers (95/90/80/65/40 cuts) instead of 4 — see DAI_TIER_LABELS. Colors
+// step from green (most authentic) through yellow/orange to red (least),
+// keeping the pre-existing green/yellow/red anchors so a document that
+// used to read "Authentic" (green) or "Highly Suspicious" (red) still
+// lands on a visually consistent color under the finer-grained labels.
 export const AUTHENTICITY_LEVEL_COLORS: Record<string, string> = {
-  Authentic: "#00CC96",
-  "Likely Authentic": "#00CC96",
-  Suspicious: "#FECB52",
-  "Highly Suspicious": "#EF553B",
+  "Highly Authentic": "#00CC96",
+  "Strongly Authentic": "#00CC96",
+  "Likely Authentic": "#4CD97B",
+  "Mostly Authentic": "#FECB52",
+  Suspicious: "#F0932B",
+  "Likely Manipulated or Forged": "#EF553B",
   "Insufficient Signal": "#888888",
 };
 

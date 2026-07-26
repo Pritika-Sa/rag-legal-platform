@@ -10,6 +10,11 @@ from utils.llm_client import invoke_llm_structured
 
 logger = logging.getLogger(__name__)
 
+OUT_OF_SCOPE_MESSAGE = (
+    "This question is not related to the active document. "
+    "Legal AI can answer only questions based on the active document."
+)
+
 
 class Citation(BaseModel):
     document_id: str
@@ -46,6 +51,13 @@ def _groundedness_label(hallucination_score: int) -> str:
     if hallucination_score <= 50:
         return "Medium"
     return "Low"
+
+
+def _is_out_of_scope_answer(answer: str) -> bool:
+    """Recognize the model's former vague refusal and replace it with the
+    active-document guidance shown to the user."""
+    normalized = answer.strip().lower().rstrip(".! ")
+    return normalized in {"not applicable", "not relevant", "n/a"}
 
 
 def _run_hallucination_check(question: str, context_str: str, answer: str) -> Dict[str, Any]:
@@ -96,7 +108,7 @@ def answer_legal_question(query: str, doc_id: Optional[str] = None) -> QAResult:
 
     if not retrieved_docs:
         return QAResult(
-            answer="I could not find any relevant information in the documents to answer your question.",
+            answer=OUT_OF_SCOPE_MESSAGE,
             supporting_clauses=[], citation_references=[], confidence_score=0,
         )
 
@@ -105,7 +117,9 @@ def answer_legal_question(query: str, doc_id: Optional[str] = None) -> QAResult:
     system_instruction = (
         "You are an expert corporate legal counsel. "
         "Answer the user's question using strictly the provided context blocks. "
-        "Do not hallucinate or use outside knowledge. If the answer is not in the context, say so clearly. "
+        "Do not hallucinate or use outside knowledge. If the query is unrelated to the active document or cannot be "
+        "answered from its context, respond exactly: 'This question is not related to the active document. Legal AI "
+        "can answer only questions based on the active document.' Never respond with 'Not applicable'. "
         "Provide a comprehensive 'answer', 'supporting_clauses' texts, 'citation_references' with document IDs and section names, "
         "and a 'confidence_score' (0-100)."
     )
@@ -113,6 +127,11 @@ def answer_legal_question(query: str, doc_id: Optional[str] = None) -> QAResult:
 
     try:
         result = invoke_llm_structured(system_instruction, prompt, QAResult)
+        if _is_out_of_scope_answer(result.answer):
+            return QAResult(
+                answer=OUT_OF_SCOPE_MESSAGE,
+                supporting_clauses=[], citation_references=[], confidence_score=0,
+            )
         result.context_used = context_str
         result.hallucination = _run_hallucination_check(query, context_str, result.answer)
         return result

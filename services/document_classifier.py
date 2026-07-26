@@ -167,6 +167,65 @@ DOCUMENT_TYPE_PATTERNS: Dict[str, List[str]] = {
         r"\bpremium\b",
         r"sum assured",
     ],
+    # 2026-07-26 audit follow-up: the 8 types below were previously entirely
+    # unrecognized (fell to UNKNOWN_DOCUMENT_TYPE), which -- via
+    # authenticity/structure.py's contract-shaped generic_minimal fallback
+    # -- systematically scored genuine documents of these types as "Likely
+    # Manipulated or Forged". Patterns chosen to be distinctive against the
+    # existing 21 types (checked for keyword collisions; see
+    # tests/test_document_classifier.py's NewDocumentTypeDisambiguationTests).
+    "Invoice": [
+        r"tax invoice",
+        r"\binvoice\s*(?:no\.?|number)\b",
+        r"\bbill\s+to\b",
+        r"\bgstin\b",
+        r"\bsubtotal\b",
+    ],
+    "Receipt": [
+        r"payment\s+receipt",
+        r"\breceipt\s*(?:no\.?|number)\b",
+        r"received\s+from",
+        r"payment\s+mode",
+    ],
+    "Medical Record": [
+        r"discharge\s+summary",
+        r"\bpatient\s*(?:id|name)\b",
+        r"date\s+of\s+admission",
+        r"attending\s+physician",
+        r"\bdiagnosis\b",
+    ],
+    "Bank Statement": [
+        r"account\s+statement",
+        r"\bifsc\b",
+        r"opening\s+balance",
+        r"closing\s+balance",
+        r"statement\s+period",
+    ],
+    "Identity Document": [
+        r"\bpassport\s*(?:no\.?|number)\b",
+        r"date\s+of\s+birth",
+        r"place\s+of\s+birth",
+        r"\baadhaar\b",
+        r"driving\s+licen[cs]e",
+    ],
+    "Certificate": [
+        r"this\s+is\s+to\s+certify",
+        r"\bcertify\s+that\b",
+        r"\bcertificate\s*(?:no\.?|number)\b",
+        r"hereby\s+certified",
+    ],
+    "Purchase Order": [
+        r"purchase\s+order",
+        r"\bpo\s*(?:no\.?|number)\b",
+        r"\bship\s+to\b",
+    ],
+    "Government Notice": [
+        r"\bnotification\b",
+        r"government\s+of\b",
+        r"in\s+exercise\s+of\s+the\s+powers",
+        r"\bgazette\b",
+        r"\bcircular\s+no\b",
+    ],
 }
 
 _COMPILED_PATTERNS: Dict[str, List["re.Pattern"]] = {

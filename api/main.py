@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from api.config import FRONTEND_ORIGINS
+from api.config import AUTH_COOKIE_NAME, FRONTEND_ORIGINS
+from api.deps import StaleServerInstanceError
 from api.routers import auth as auth_router
 from api.routers import chat as chat_router
 from api.routers import clauses as clauses_router
@@ -25,6 +27,15 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
+
+
+@app.exception_handler(StaleServerInstanceError)
+def handle_stale_server_instance(request: Request, exc: StaleServerInstanceError):
+    # Mirrors auth_router.logout()'s cookie deletion exactly, so a stale
+    # dev-server session is cleared the same way an explicit logout is.
+    response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
+    return response
 
 
 @app.get("/api/health")

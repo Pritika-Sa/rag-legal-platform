@@ -59,6 +59,48 @@ CLAUSE_RULES: Dict[str, dict] = _load_json("clause_rules.json")
 if not CLAUSE_RULES:
     raise RuleLoadError("clause_rules.json loaded but is empty")
 
+# Sprint 4B (Keyword Matching Integrity): keyword matching was plain
+# substring containment (`kw in text_lower`), which matches a keyword
+# anywhere inside an unrelated word -- confirmed as a real, corpus-observed
+# defect (Sprint 4A), not a hypothetical one: "lien" inside "client", "war"
+# inside "warranty", "cap" inside "capital", "rent" inside "different".
+# Word-boundary-anchored matching (\bkeyword\b) eliminates all of these
+# while still matching the keyword as a whole word anywhere in the text,
+# including inside multi-word phrases ("written notice", "third-party
+# claim") -- hyphens and spaces are non-word characters, so \b already
+# treats them as valid boundaries with no special-casing needed.
+#
+# Trade-off, disclosed rather than hidden: this also stops a keyword from
+# matching as a *prefix* of an unrelated inflection that isn't separately
+# listed -- e.g. "terminate" as a keyword no longer substring-matches
+# "terminated"/"terminating". This is judged acceptable, not a functional
+# loss, because (a) every category's own `regex` field already independently
+# covers the common inflected forms (Termination's regex has an explicit
+# `terminat(ing|ed)` branch) and contributes the larger 0.25 score
+# component regardless of the keyword match, and (b) categories that
+# anticipated needing multiple word forms already list them explicitly as
+# separate keywords (Assignment lists "assign", "assignment", AND
+# "assignable" independently) -- validated empirically across the full
+# corpus, see Sprint 4B validation notes.
+#
+# Precompiled once at import time (49 categories x ~10 keywords each is a
+# trivial one-time cost) rather than re-compiled per detect_clause_type()
+# call, which also runs once per candidate block during clause
+# identification -- a free efficiency win, not the point of this change.
+_KEYWORD_PATTERNS: Dict[str, List[Tuple[str, "re.Pattern"]]] = {
+    c_type: [(kw, re.compile(r"\b" + re.escape(kw) + r"\b")) for kw in rules["keywords"]]
+    for c_type, rules in CLAUSE_RULES.items()
+}
+
+
+def matched_keywords(clause_type: str, text_lower: str) -> List[str]:
+    """Word-boundary-matched keywords for `clause_type` found in
+    (already-lowercased) `text_lower`. Single shared implementation used by
+    every keyword-matching call site in this codebase (detect_clause_type,
+    detect_query_intent, agents.clause_explainability._score_category) so
+    they can never silently drift apart on how a "match" is defined."""
+    return [kw for kw, pattern in _KEYWORD_PATTERNS[clause_type] if pattern.search(text_lower)]
+
 # ── Importance tiers ─────────────────────────────────────────────────────────
 
 _importance_raw = _load_json("importance_rules.json")
@@ -99,7 +141,18 @@ MODIFIER_MITIGATORS: List[str] = list(MITIGATOR_WEIGHTS.keys())
 # ── Extraction regexes ──────────────────────────────────────────────────────
 
 _MONEY_RE = re.compile(
-    r"(?:USD|US\$|\$|₹|INR|Rs\.?|€|£)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion|thousand|lakh|crore))?"
+    # \b before Rs\.? only (Sprint 2D stability fix): without it, the
+    # case-insensitive alternation matches "rs" as a mid-word substring of
+    # any plural/s-ending English word (advisers, directors, employers,
+    # disasters, ...) — confirmed the actual trigger of a real crash (see
+    # agents.feature_extraction_agent._parse_money_string). The symbol
+    # alternatives ($, ₹, €, £) don't need this guard: a bare currency
+    # symbol cannot occur as a substring inside an alphabetic word the way
+    # "rs" can, so adding \b there would risk the opposite failure mode
+    # (a boundary check immediately before a non-word character can fail
+    # to match text like "Total: $500", where both neighbouring characters
+    # are non-word) without fixing anything real — left untouched.
+    r"(?:USD|US\$|\$|₹|INR|\bRs\.?|€|£)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion|thousand|lakh|crore))?"
     r"|\b\d+(?:\.\d+)?\s?%",
     re.IGNORECASE,
 )
@@ -311,14 +364,17 @@ def detect_clause_type(text: str) -> Tuple[str, float]:
     """Scores `text` against every CLAUSE_RULES entry and returns the
     best-matching (clause_type, confidence in [0,1]). Confidence combines a
     regex hit, keyword density (capped so density can't dominate), and a
-    small bonus if the clause type name appears in the block's heading line."""
+    small bonus if the clause type name appears in the block's heading line.
+    Keyword matching is word-boundary-anchored (see matched_keywords /
+    Sprint 4B) — a keyword only counts when it appears as a whole word,
+    never as a substring inside an unrelated word."""
     text_lower = text.lower()
     first_line_lower = _first_line(text).lower()
 
     best_type = "General"
     best_score = 0.0
     for c_type, rules in CLAUSE_RULES.items():
-        keyword_hits = sum(1 for kw in rules["keywords"] if kw in text_lower)
+        keyword_hits = len(matched_keywords(c_type, text_lower))
         regex_hit = bool(re.search(rules["regex"], text_lower))
         heading_bonus = 0.15 if c_type.lower() in first_line_lower else 0.0
         score = min(1.0, round(0.25 * regex_hit + 0.10 * min(keyword_hits, 5) + heading_bonus, 2))
@@ -354,8 +410,8 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     types (Chroma accepts this natively as a filter leaf)."""
     query_lower = query.lower()
     matched_types = [
-        c_type for c_type, rules in CLAUSE_RULES.items()
-        if any(kw in query_lower for kw in rules["keywords"])
+        c_type for c_type in CLAUSE_RULES
+        if matched_keywords(c_type, query_lower)
     ]
     if not matched_types:
         return {}

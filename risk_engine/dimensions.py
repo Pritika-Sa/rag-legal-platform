@@ -92,9 +92,37 @@ def _operational_raw(fv: LegalFeatureVector) -> float:
 def _ambiguity_feature_signal(fv: LegalFeatureVector) -> float:
     """Ratio of weak/hedging modals to all detected modals — already
     bounded in [0,1], so unlike the other four dimensions this is not
-    corpus-percentile-normalized. A clause with no detected obligation
-    language at all defaults to 0.5 (genuinely ambiguous: there is nothing
-    to say it is precisely drafted)."""
+    corpus-percentile-normalized.
+
+    Three cases, not two (Sprint 2B, Issue 1 — see risk_engine module
+    docstring history / Sprint 2A design doc for the full derivation):
+
+      1. fv.has_prose_verb is False: the clause contains no verb or
+         auxiliary at all (agents.feature_extraction_agent._has_prose_verb)
+         — it is not prose attempting to state a right/obligation in the
+         first place (a structured/tabular field: "NCB %: -50", "Vehicle
+         IDV (in Rs.): 20,447.00"). There is no commitment language here to
+         be hedged or unhedged, so "ambiguous" does not apply; returns the
+         same 0.0 floor the modal-ratio branch below already produces for
+         its own least-ambiguous case (an all-strong-modal clause), rather
+         than inventing a new constant. This replaces the old behavior of
+         defaulting such clauses to 0.5 ("genuinely ambiguous"), which
+         measurably misfired on structured content (Sprint 1: 21/26 clauses
+         in a real insurance policy hit this branch, each contributing a
+         phantom ~15-17 LRSI points with zero supporting evidence).
+
+      2. fv.has_prose_verb is True, or None (unknown — e.g. a hand-built or
+         pre-Sprint-2B LegalFeatureVector that never populated the new
+         field; treated as prose for backward compatibility), and no
+         modals were detected: this is exactly the case the original 0.5
+         default was designed for — prose that discusses action without
+         ever committing to modal language — now correctly scoped to only
+         fire on clauses that are actually prose.
+
+      3. Modals were detected: unchanged — ratio of weak to total modals.
+    """
+    if fv.has_prose_verb is False:
+        return 0.0
     modals = [o.modal.lower() for o in fv.obligations if o.modal]
     if not modals:
         return 0.5
@@ -160,6 +188,13 @@ def feature_evidence(fv: LegalFeatureVector, dimension: str) -> List[str]:
             + [f"dependency: {dep.relation} -> clause {dep.target_clause_id}" for dep in fv.dependencies]
         )
     if dimension == "Ambiguity":
+        if fv.has_prose_verb is False:
+            # Preserves explainability for the new low-floor branch in
+            # _ambiguity_feature_signal — Sprint 1 flagged that this
+            # dimension was contributing significant points while
+            # reporting "no specific evidence surfaced"; this replaces
+            # that silence with an honest, specific reason.
+            return ["no verb/auxiliary detected — structured or tabular content, not prose"]
         weak_modals = [o.modal for o in fv.obligations if o.modal and o.modal.lower() in WEAK_MODALS]
         return [f"weak modal: '{m}'" for m in weak_modals]
     return []

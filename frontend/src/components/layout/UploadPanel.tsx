@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Typography } from "@mui/material";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { extractErrorMessage } from "../../api/authApi";
 import { extractAlreadyAnalyzedDocId } from "../../api/documentsApi";
 import { useProcessMutation, useUploadMutation } from "../../hooks/useDocuments";
@@ -14,6 +14,7 @@ import { ALLOWED_UPLOAD_EXTENSIONS, validateUploadFile } from "../../utils/uploa
 export function UploadPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [showProcessSuccess, setShowProcessSuccess] = useState(false);
   const uploadMutation = useUploadMutation();
   const processMutation = useProcessMutation();
   const { setActiveDocument } = useActiveDocumentStore();
@@ -22,6 +23,7 @@ export function UploadPanel() {
     const file = e.target.files?.[0];
     uploadMutation.reset();
     processMutation.reset();
+    setShowProcessSuccess(false);
     setClientError(null);
     if (!file) return;
 
@@ -58,8 +60,16 @@ export function UploadPanel() {
     ? extractAlreadyAnalyzedDocId(processMutation.error)
     : null;
 
+  useEffect(() => {
+    if (!processMutation.isSuccess) return;
+
+    setShowProcessSuccess(true);
+    const timeoutId = window.setTimeout(() => setShowProcessSuccess(false), 4500);
+    return () => window.clearTimeout(timeoutId);
+  }, [processMutation.isSuccess]);
+
   return (
-    <Box sx={{ mb: 2 }}>
+    <Box sx={{ mb: 1.5, flexShrink: 0, p: 1.25, border: "1px solid #e8ebf3", borderRadius: 2.5, bgcolor: "#fafbff" }}>
       <input
         ref={inputRef}
         type="file"
@@ -75,7 +85,7 @@ export function UploadPanel() {
       >
         📤 Upload a document
       </Button>
-      <Typography sx={{ fontSize: "0.7rem", opacity: 0.55, mt: 0.5 }}>
+      <Typography sx={{ fontSize: "0.7rem", color: "text.secondary", mt: 0.65, lineHeight: 1.45 }}>
         PDF, Word, or text contracts. Images are OCR&apos;d automatically before analysis.
       </Typography>
 
@@ -127,7 +137,7 @@ export function UploadPanel() {
         </Box>
       )}
 
-      {processMutation.isSuccess && (
+      {processMutation.isSuccess && showProcessSuccess && (
         <Box sx={{ mt: 1 }}>
           <Alert severity="success" sx={{ fontSize: "0.78rem" }}>
             🎉 &apos;{uploadMutation.data?.name}&apos; processed — {processMutation.data.clause_count} clauses found.
