@@ -181,7 +181,6 @@ pnpm-debug.log*
 *.swp
 *.pid
 
-# Tests
 tests/
 
 git add debug/*.py
