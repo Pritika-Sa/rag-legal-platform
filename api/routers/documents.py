@@ -100,7 +100,7 @@ async def process_document(body: ProcessRequest, current_user: dict = Depends(ge
 
     return ProcessResponse(
         doc_id=result["doc_id"],
-        clause_count=len(result.get("db_clauses", [])),
+        clause_count=result.get("clause_count", 0),
         document_risk_score=result.get("document_risk_score", 0),
         authenticity_score=result.get("authenticity_score", 0),
         parsing_quality_warning=result.get("parsing_quality_warning"),

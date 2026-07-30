@@ -102,7 +102,7 @@ export function ClauseCard({ docId, clause }: ClauseCardProps) {
         <AccordionDetails>
           {simplifyMutation.isPending && (
             <Typography variant="body2" sx={{ opacity: 0.7 }}>
-              Agent 7 is translating legalese to plain English...
+              Generating plain-English redraft...
             </Typography>
           )}
           {simplifyMutation.isError && !clause.simplification && (

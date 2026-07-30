@@ -7,6 +7,10 @@ def init_db():
 
     db.users.create_index("email", unique=True)
     db.users.create_index("reset_token_hash")
+    # Looked up on every authenticated request now (api/deps.py::get_current_user
+    # checks the account still exists, so a deleted account's JWT stops
+    # working immediately instead of staying valid until it expires).
+    db.users.create_index("id", unique=True)
 
     # Unique per-user, not globally - different users may each upload a file
     # named e.g. "contract.pdf" without colliding.

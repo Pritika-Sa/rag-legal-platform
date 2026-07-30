@@ -1,6 +1,24 @@
-import { Alert, Avatar, Box, Button, Chip, CircularProgress, Drawer, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Drawer,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLogoutMutation } from "../../hooks/useAuth";
+import { extractErrorMessage } from "../../api/authApi";
+import { useDeleteAccountMutation, useLogoutMutation } from "../../hooks/useAuth";
 import { useDeleteMutation, useDocumentsQuery } from "../../hooks/useDocuments";
 import { useActiveDocumentStore } from "../../store/activeDocumentStore";
 import { useAuthStore } from "../../store/authStore";
@@ -20,11 +38,29 @@ export function Sidebar() {
   const documentsQuery = useDocumentsQuery();
   const deleteMutation = useDeleteMutation();
   const { activeDocId, setActiveDocument, clearActiveDocument } = useActiveDocumentStore();
+  const deleteAccountMutation = useDeleteAccountMutation();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
 
   const handleDelete = (docId: number, isActive: boolean) => {
     deleteMutation.mutate(docId, {
       onSuccess: () => {
         if (isActive) clearActiveDocument();
+      },
+    });
+  };
+
+  const closeDeleteAccountDialog = () => {
+    setDeleteDialogOpen(false);
+    setDeletePassword("");
+    deleteAccountMutation.reset();
+  };
+
+  const handleDeleteAccount = () => {
+    deleteAccountMutation.mutate(deletePassword, {
+      onSuccess: () => {
+        setDeleteDialogOpen(false);
+        navigate("/login", { replace: true });
       },
     });
   };
@@ -105,6 +141,55 @@ export function Sidebar() {
       <Button variant="outlined" fullWidth onClick={handleLogout} loading={logoutMutation.isPending} sx={{ flexShrink: 0 }}>
         Log Out
       </Button>
+
+      <Button
+        variant="text"
+        color="error"
+        fullWidth
+        size="small"
+        onClick={() => setDeleteDialogOpen(true)}
+        sx={{ flexShrink: 0, mt: 0.5, fontSize: "0.72rem" }}
+      >
+        Delete Account
+      </Button>
+
+      <Dialog open={deleteDialogOpen} onClose={closeDeleteAccountDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete your account?</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            This permanently deletes your account, every document you've uploaded, and all associated analysis
+            data. This cannot be undone.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            type="password"
+            label="Confirm your password"
+            value={deletePassword}
+            onChange={(e) => setDeletePassword(e.target.value)}
+            disabled={deleteAccountMutation.isPending}
+          />
+          {deleteAccountMutation.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {extractErrorMessage(deleteAccountMutation.error, "Failed to delete account.")}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDeleteAccountDialog} disabled={deleteAccountMutation.isPending}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeleteAccount}
+            disabled={!deletePassword || deleteAccountMutation.isPending}
+            loading={deleteAccountMutation.isPending}
+          >
+            Delete My Account
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Box sx={{ borderTop: "1px solid", borderColor: "divider", my: 2 }} />
 

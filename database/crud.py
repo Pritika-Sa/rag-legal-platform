@@ -1,4 +1,6 @@
 import logging
+import os
+import shutil
 from datetime import datetime, timezone
 from database.connection import get_db
 from database.models import _get_next_id
@@ -65,8 +67,8 @@ def get_document_by_id(doc_id):
 def update_document_analysis(doc_id, **fields):
     """Sets document-level analysis fields (document_type, language,
     authenticity_score, authenticity_level, parsing_quality_warning,
-    document_risk_score, document_risk_level, document_risk_recommendations)
-    onto the documents collection. Only non-None values are written, so
+    document_risk_score, document_risk_level, document_risk_recommendations,
+    clause_count) onto the documents collection. Only non-None values are written, so
     partial updates (e.g. from a node that only computed authenticity) never
     clobber fields set by another node. MongoDB is schemaless, so documents
     analyzed before this field existed simply lack it — every reader must
@@ -79,7 +81,16 @@ def update_document_analysis(doc_id, **fields):
 
 
 def delete_document(doc_id):
-    """Deletes a document and all related data."""
+    """Deletes a document and all related data: every MongoDB collection
+    keyed by doc_id (including pages/entities/relationships, previously
+    left orphaned), the uploaded file on disk, and its ChromaDB embeddings.
+    Callers (api/routers/documents.py, app.py) verify ownership before
+    calling this - it does not re-check user_id itself.
+
+    The file removal and vector deletion are best-effort: a missing file or
+    a document with no vectors is not an error (nothing to clean up), and a
+    genuine failure in either is logged rather than raised, so one external
+    resource being unreachable never leaves the MongoDB cleanup half-done."""
     db = get_db()
     doc = db.documents.find_one({"id": doc_id})
     doc_name = doc["name"] if doc else f"ID {doc_id}"
@@ -89,9 +100,104 @@ def delete_document(doc_id):
     if clause_ids:
         db.clause_versions.delete_many({"clause_id": {"$in": clause_ids}})
     db.clauses.delete_many({"doc_id": doc_id})
+    db.pages.delete_many({"doc_id": doc_id})
+    db.entities.delete_many({"doc_id": doc_id})
+    db.relationships.delete_many({"doc_id": doc_id})
     db.documents.delete_one({"id": doc_id})
 
+    if doc and doc.get("path"):
+        try:
+            os.remove(doc["path"])
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.exception(f"Failed to delete uploaded file for document {doc_id} ({doc_name})")
+
+    try:
+        from vectorstore import chroma_client
+        chroma_client.delete_document(doc_id)
+    except Exception:
+        logger.exception(f"Failed to delete ChromaDB vectors for document {doc_id} ({doc_name})")
+
     add_audit_log("document_delete", f"Deleted document '{doc_name}' (ID: {doc_id})")
+
+
+def _supports_transactions(db) -> bool:
+    """MongoDB multi-document transactions require a replica set or mongos
+    - a standalone server (e.g. a bare local `mongod` in another
+    environment) rejects them outright. Checked once per account deletion
+    rather than assumed, since this project's Atlas deployment is a
+    replica set but that isn't guaranteed everywhere this code runs."""
+    try:
+        return bool(db.client.admin.command("hello").get("setName"))
+    except Exception:
+        return False
+
+
+def delete_user_account(user_id):
+    """Hard-deletes a user and every document they own.
+
+    All MongoDB writes (documents + every doc_id-keyed collection, plus the
+    user record itself) run as one transaction when the deployment supports
+    it, so a failure partway through leaves Mongo completely unchanged
+    rather than half-deleted - this matters more here than in
+    delete_document() because an account deletion touches an unbounded
+    number of documents at once. audit_logs/retrieval_history are
+    deliberately untouched (kept as a historical record; audit_logs never
+    stored user_id in the first place, so there is nothing to anonymize
+    there) and are not part of the transaction.
+
+    The uploads/<user_id>/ directory and the user's ChromaDB vectors (one
+    bulk user_id-filtered delete - see chroma_client.delete_user, not a
+    per-document loop) are cleaned up after Mongo commits, since neither is
+    a MongoDB resource that can join the transaction. Both are best-effort:
+    failures are logged, not raised, once the authoritative Mongo records
+    are already gone.
+    """
+    db = get_db()
+    user = db.users.find_one({"id": user_id})
+    if not user:
+        return
+
+    doc_ids = [d["id"] for d in db.documents.find({"user_id": user_id}, {"id": 1})]
+    clause_ids = (
+        [c["id"] for c in db.clauses.find({"doc_id": {"$in": doc_ids}}, {"id": 1})]
+        if doc_ids else []
+    )
+
+    def _delete_all(session=None):
+        if clause_ids:
+            db.clause_versions.delete_many({"clause_id": {"$in": clause_ids}}, session=session)
+        if doc_ids:
+            db.contradictions.delete_many({"doc_id": {"$in": doc_ids}}, session=session)
+            db.clauses.delete_many({"doc_id": {"$in": doc_ids}}, session=session)
+            db.pages.delete_many({"doc_id": {"$in": doc_ids}}, session=session)
+            db.entities.delete_many({"doc_id": {"$in": doc_ids}}, session=session)
+            db.relationships.delete_many({"doc_id": {"$in": doc_ids}}, session=session)
+            db.documents.delete_many({"user_id": user_id}, session=session)
+        db.users.delete_one({"id": user_id}, session=session)
+
+    if _supports_transactions(db):
+        with db.client.start_session() as session:
+            session.with_transaction(lambda s: _delete_all(session=s))
+    else:
+        _delete_all()
+
+    uploads_dir = os.path.join(os.getenv("UPLOADS_DIR", "uploads"), str(user_id))
+    try:
+        shutil.rmtree(uploads_dir)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.exception(f"Failed to delete uploads directory for user {user_id}")
+
+    try:
+        from vectorstore import chroma_client
+        chroma_client.delete_user(user_id)
+    except Exception:
+        logger.exception(f"Failed to delete ChromaDB vectors for user {user_id}")
+
+    add_audit_log("account_delete", f"Deleted user account (ID: {user_id})")
 
 
 # ── Clauses ────────────────────────────────────────────────────────────────
@@ -454,6 +560,15 @@ def add_entities_bulk(doc_id, entities):
     return ids
 
 
+def count_entities_for_document(doc_id) -> int:
+    """Count-only read (no document fetch, no full list) — used by the
+    chatbot's aggregate-metric answers (services/aggregate_metrics_service.py)
+    so 'how many entities' never needs a separate stats field kept in sync;
+    it counts the same persisted rows add_entities_bulk wrote."""
+    db = get_db()
+    return db.entities.count_documents({"doc_id": doc_id})
+
+
 # ── Relationships (persisted knowledge-graph + dependency-graph edges) ──────
 
 def add_relationships_bulk(doc_id, relationships):
@@ -488,6 +603,12 @@ def add_relationships_bulk(doc_id, relationships):
     ]
     db.relationships.insert_many(docs)
     return ids
+
+
+def count_relationships_for_document(doc_id) -> int:
+    """Count-only read, same rationale as count_entities_for_document above."""
+    db = get_db()
+    return db.relationships.count_documents({"doc_id": doc_id})
 
 
 # ── Retrieval History (one row per QA query) ────────────────────────────────

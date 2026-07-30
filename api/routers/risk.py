@@ -80,6 +80,22 @@ def quick_estimate(doc_id: int, current_user: dict = Depends(get_current_user)):
     from agents.risk_scoring_agent import assess_document_risk
 
     result = assess_document_risk(document["name"], clauses)
+
+    # Persist the just-displayed result as the document's canonical risk
+    # score/level: Quick Estimate re-aggregates over each clause's *current*
+    # risk_score/risk_level, which can have moved on from whatever was
+    # persisted at ingestion time (agents/orchestrator.py, run once). Without
+    # this, the Dashboard/chatbot/Risk Overview (all Mongo readers) keep
+    # showing the stale ingestion-time value forever, even though this is
+    # the number the user just saw on screen. Same aggregation function,
+    # same inputs — this only writes its output, never recomputes it.
+    crud.update_document_analysis(
+        doc_id,
+        document_risk_score=result.risk_score,
+        document_risk_level=result.risk_level,
+        document_risk_recommendations=result.recommendations,
+    )
+
     return QuickEstimateResponse(
         risk_score=result.risk_score,
         risk_level=result.risk_level,

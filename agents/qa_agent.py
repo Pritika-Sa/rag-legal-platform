@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from agents.hallucination_agent import evaluate_hallucination
 from database import crud
+from services.aggregate_metrics_service import answer_aggregate_metric, classify_aggregate_metric
 from services.retrieval_service import build_prompt_context, perform_vector_search
 from utils.llm_client import invoke_llm_structured
 
@@ -92,13 +93,42 @@ def _run_hallucination_check(question: str, context_str: str, answer: str) -> Di
         }
 
 
-def answer_legal_question(query: str, doc_id: Optional[str] = None) -> QAResult:
+def answer_legal_question(query: str, doc_id: Optional[str] = None, user_id: Optional[Any] = None) -> QAResult:
     """Legal Question Answering Agent.
 
-    Query -> Embedding -> Vector Search (Top 5) -> optional Cross-Encoder
-    Reranker -> Prompt Builder -> single LLM call -> Answer + citations.
+    Question Classifier -> [Aggregate Document Metric -> MongoDB] or
+    [Legal Question -> Query -> Embedding -> Vector Search (Top 5) ->
+    optional Cross-Encoder Reranker -> Prompt Builder -> single LLM call] ->
+    Answer + citations.
+
+    The classifier (services.aggregate_metrics_service) only ever short-
+    circuits questions asking for a number/label that's already persisted
+    on the document (clause count, risk/authenticity scores, contradiction
+    count, ...) — those are answered straight from MongoDB, never estimated
+    by the LLM from a handful of retrieved chunks. Everything else (clause
+    explanations, summaries, comparisons) falls through to the RAG pipeline
+    below completely unchanged.
+
+    `user_id` is the authenticated caller's id and is mandatory: it scopes
+    retrieval to that user's own documents (see
+    services.retrieval_service.perform_vector_search /
+    vectorstore.chroma_client.search_document), which is what prevents one
+    user's uploaded documents from being retrieved into another user's
+    answer context.
     """
-    retrieved_docs = perform_vector_search(query, doc_id, k=5)
+    metric = classify_aggregate_metric(query)
+    if metric is not None:
+        aggregate_answer = answer_aggregate_metric(metric, doc_id, user_id)
+        if aggregate_answer is not None:
+            return QAResult(
+                answer=aggregate_answer,
+                supporting_clauses=[], citation_references=[], confidence_score=100,
+            )
+        # No active document to scope the metric to (or it didn't resolve to
+        # a real, owned document) — fall through to the RAG pipeline, same
+        # as any other question, rather than inventing a separate error path.
+
+    retrieved_docs = perform_vector_search(query, doc_id, user_id=user_id, k=5)
 
     retrieved_chunk_ids = [d.metadata.get("clause_id") for d in retrieved_docs if d.metadata.get("clause_id") is not None]
     try:

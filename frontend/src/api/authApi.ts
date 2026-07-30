@@ -42,6 +42,10 @@ export async function me(): Promise<User> {
   return data;
 }
 
+export async function deleteAccount(password: string): Promise<void> {
+  await apiClient.post("/api/auth/delete-account", { password });
+}
+
 /** Pulls the FastAPI adapter's `{"detail": "..."}` error body into a plain
  * message string, mirroring the plain-text messages app.py showed via
  * st.error() for the same failures (invalid credentials, duplicate email,

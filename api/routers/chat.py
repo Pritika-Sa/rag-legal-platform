@@ -24,7 +24,7 @@ async def chat(body: ChatRequest, current_user: dict = Depends(get_current_user)
 
     doc_id_str = str(body.doc_id) if body.doc_id is not None else None
     try:
-        result = await run_in_threadpool(answer_legal_question, body.query, doc_id_str)
+        result = await run_in_threadpool(answer_legal_question, body.query, doc_id_str, current_user["id"])
     except Exception as e:
         # app.py catches this and appends "Failed to answer: {e}" as a
         # regular assistant message rather than an error state — the

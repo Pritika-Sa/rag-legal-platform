@@ -48,6 +48,13 @@ class AgentState(TypedDict):
     authenticity_score: int
     authenticity_level: str
     authenticity_warnings: List[str]
+    # Single canonical count of legal clauses (excludes "Structured Field"
+    # rows) -- computed once here and persisted, so every caller of
+    # run_orchestration (api/routers/documents.py, app.py) reports the same
+    # number the dashboard and Clause Analysis page already derive live from
+    # the same legal-clause population, instead of each recomputing its own
+    # (previously unfiltered) count from db_clauses.
+    clause_count: int
 
 
 # 2026-07-27 clause-extraction fix: agents/clause_identifier_agent.py already
@@ -288,6 +295,7 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
         # "document_id" metadata silently fell back to "unknown_doc",
         # breaking per-document filtering (see chroma_client.add_clauses_to_vectorstore).
         sec["doc_id"] = state["doc_id"]
+        sec["user_id"] = state["user_id"]
         sec["language"] = doc_language
         sec["document_type"] = doc_type
         db_clauses.append(sec)
@@ -310,6 +318,13 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
 
     chroma_client.add_clauses_to_vectorstore(legal_db_clauses)
 
+    # Same population/definition the dashboard (crud.get_dashboard_metrics)
+    # and Clause Analysis page already use for "Total Clauses" -- computed
+    # once here and persisted so every reader shares one number instead of
+    # each recomputing it (previously the upload success banner counted
+    # unfiltered db_clauses, which double-counted Structured Field rows).
+    clause_count = len(legal_db_clauses)
+
     crud.update_document_analysis(
         state["doc_id"],
         document_type=doc_type,
@@ -317,6 +332,7 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
         parsing_quality_warning=parsing_quality_warning,
         document_risk_score=document_risk_score,
         document_risk_level=document_risk_level,
+        clause_count=clause_count,
     )
 
     # Sprint 1 LRSI debugging framework (see debug/lrsi_debug_logger.py) —
@@ -341,6 +357,7 @@ def clause_processing_node(state: AgentState) -> Dict[str, Any]:
         "document_risk_score": document_risk_score,
         "document_risk_level": document_risk_level,
         "document_risk_recommendations": document_risk_recommendations,
+        "clause_count": clause_count,
     }
 
 
@@ -494,5 +511,6 @@ def run_orchestration(file_path: str, user_id: int = None) -> Dict[str, Any]:
         "document_type": "General Contract", "language": "unknown",
         "document_risk_score": 0, "document_risk_level": "Low", "document_risk_recommendations": "",
         "authenticity_score": 0, "authenticity_level": "Unknown", "authenticity_warnings": [],
+        "clause_count": 0,
     }
     return app.invoke(initial_state)

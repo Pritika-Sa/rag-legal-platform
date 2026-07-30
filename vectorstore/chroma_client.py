@@ -26,8 +26,18 @@ def get_chroma_vectorstore() -> Chroma:
     return _chroma_instance
 
 
-def add_document(document_id: str, version: int, clauses: List[Dict[str, Any]], upload_date: str) -> List[str]:
-    """Adds a document's clauses to the vector database with metadata."""
+def add_document(document_id: str, version: int, clauses: List[Dict[str, Any]], upload_date: str,
+                  user_id: Optional[Any] = None) -> List[str]:
+    """Adds a document's clauses to the vector database with metadata.
+
+    `user_id` is written into every chunk's metadata and is the security
+    boundary enforced by search_document()'s mandatory user_id filter — a
+    document ingested without an owner can never be retrieved back (see
+    the assertion below), rather than silently becoming readable by anyone.
+    """
+    if not user_id:
+        raise ValueError("add_document requires a user_id: chunks with no owner can never be safely retrieved")
+
     db = get_chroma_vectorstore()
 
     texts = []
@@ -38,6 +48,7 @@ def add_document(document_id: str, version: int, clauses: List[Dict[str, Any]], 
         texts.append(c["text_content"])
         meta = {
             "document_id": str(document_id),
+            "user_id": str(user_id),
             "version": int(c.get("version") or version),
             "clause_type": str(c.get("clause_type") or c.get("classification") or "Unclassified"),
             "risk_level": str(c.get("risk_level") or "None"),
@@ -67,19 +78,39 @@ def delete_document(document_id: str) -> None:
         raise e
 
 
-def update_document(document_id: str, version: int, clauses: List[Dict[str, Any]], upload_date: str) -> List[str]:
+def delete_user(user_id: Any) -> None:
+    """Deletes every embedding belonging to a user in one call, across all
+    of their documents - a single user_id metadata filter rather than
+    looping delete_document() per document_id. Used by account deletion."""
+    db = get_chroma_vectorstore()
+    try:
+        collection = db._collection
+        collection.delete(where={"user_id": str(user_id)})
+    except Exception as e:
+        print(f"Error deleting user_id {user_id} from vector store: {e}")
+        raise e
+
+
+def update_document(document_id: str, version: int, clauses: List[Dict[str, Any]], upload_date: str,
+                     user_id: Optional[Any] = None) -> List[str]:
     """Updates a document by deleting existing vectors and re-adding."""
     delete_document(document_id)
-    return add_document(document_id, version, clauses, upload_date)
+    return add_document(document_id, version, clauses, upload_date, user_id=user_id)
 
 
-def search_document(query_text: str, document_id: Optional[str] = None,
+def search_document(query_text: str, document_id: Optional[str] = None, user_id: Optional[Any] = None,
                     filters: Optional[Dict[str, Any]] = None, k: int = 4) -> List[Any]:
-    """Performs similarity search with optional document scope and metadata filtering."""
+    """Performs similarity search scoped to `user_id` (mandatory — the
+    cross-user data leak fix: without it this queries the entire shared
+    "legal_documents" collection across every user), optionally narrowed
+    further to a single document_id."""
+    if not user_id:
+        raise ValueError("search_document requires a user_id: unscoped search would leak every user's documents")
+
     db = get_chroma_vectorstore()
 
     where_filter = {}
-    conditions = []
+    conditions = [{"user_id": str(user_id)}]
 
     if document_id is not None:
         conditions.append({"document_id": str(document_id)})
@@ -105,6 +136,7 @@ def add_clauses_to_vectorstore(clauses: List[Dict[str, Any]]) -> List[str]:
     if not clauses:
         return []
     doc_id = str(clauses[0].get("doc_id", "unknown_doc"))
+    user_id = clauses[0].get("user_id")
     from datetime import datetime
     upload_date = datetime.now().isoformat()
 
@@ -121,9 +153,9 @@ def add_clauses_to_vectorstore(clauses: List[Dict[str, Any]]) -> List[str]:
             "document_type": c.get("document_type"),
             "version": c.get("version", 1),
         })
-    return add_document(document_id=doc_id, version=1, clauses=mapped_clauses, upload_date=upload_date)
+    return add_document(document_id=doc_id, version=1, clauses=mapped_clauses, upload_date=upload_date, user_id=user_id)
 
 
-def query_vectorstore(query: str, doc_id: Optional[Any] = None, k: int = 5) -> List[Any]:
+def query_vectorstore(query: str, doc_id: Optional[Any] = None, user_id: Optional[Any] = None, k: int = 5) -> List[Any]:
     """Compatibility wrapper mapping to search_document."""
-    return search_document(query_text=query, document_id=str(doc_id) if doc_id else None, k=k)
+    return search_document(query_text=query, document_id=str(doc_id) if doc_id else None, user_id=user_id, k=k)

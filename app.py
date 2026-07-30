@@ -941,7 +941,7 @@ with st.sidebar:
                         st.session_state.active_doc_name = uploaded_file.name
                         st.session_state.last_analysis_summary = {
                             "doc_name": uploaded_file.name,
-                            "clause_count": len(result.get("db_clauses", [])),
+                            "clause_count": result.get("clause_count", 0),
                             "document_risk_score": result.get("document_risk_score", 0),
                             "authenticity_score": result.get("authenticity_score", 0),
                             "parsing_quality_warning": result.get("parsing_quality_warning"),
@@ -1156,7 +1156,7 @@ if st.session_state.chat_open:
                 try:
                     from agents.qa_agent import answer_legal_question
                     doc_id_str = str(target_doc_id) if target_doc_id else None
-                    result = answer_legal_question(prompt, doc_id_str)
+                    result = answer_legal_question(prompt, doc_id_str, user["id"])
                     st.session_state.messages.append({
                         "role": "assistant", "content": result.answer, "result_payload": result,
                     })

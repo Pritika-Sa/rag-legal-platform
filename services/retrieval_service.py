@@ -31,19 +31,23 @@ RERANK_CANDIDATE_POOL = int(os.getenv("QA_RERANK_CANDIDATE_POOL", "20"))
 
 
 def perform_vector_search(
-    query: str, doc_id: Optional[str] = None, k: int = 5, use_reranker: Optional[bool] = None
+    query: str, doc_id: Optional[str] = None, user_id: Optional[object] = None, k: int = 5,
+    use_reranker: Optional[bool] = None
 ) -> List:
     """Query Embedding -> Vector Search (Top-K) -> optional Cross-Encoder Reranker.
 
+    `user_id` is mandatory and scopes every search to the authenticated
+    caller's own documents (see chroma_client.search_document) — this is
+    the cross-user data leak fix, not an optional filter.
     `use_reranker=None` defers to the QA_RERANK_ENABLED env var; pass
     True/False to override for a specific call.
     """
     rerank = RERANK_ENABLED if use_reranker is None else use_reranker
 
     if not rerank:
-        return chroma_client.search_document(query, document_id=doc_id, k=k)
+        return chroma_client.search_document(query, document_id=doc_id, user_id=user_id, k=k)
 
-    candidate_pool = chroma_client.search_document(query, document_id=doc_id, k=RERANK_CANDIDATE_POOL)
+    candidate_pool = chroma_client.search_document(query, document_id=doc_id, user_id=user_id, k=RERANK_CANDIDATE_POOL)
     if not candidate_pool:
         return []
     reranked = rerank_documents(query, candidate_pool, top_k=k)

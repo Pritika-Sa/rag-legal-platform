@@ -24,6 +24,10 @@ class ResetPasswordRequest(BaseModel):
         populate_by_name = True
 
 
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
 class UserResponse(BaseModel):
     id: int
     name: str

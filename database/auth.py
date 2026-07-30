@@ -64,6 +64,19 @@ def create_user(name: str, email: str, password: str) -> dict:
     return {"id": user_id, "name": name, "email": email}
 
 
+def verify_password(user_id: int, password: str) -> bool:
+    """Re-verifies the current password for an already-authenticated user
+    (looked up by id, not email) - used by the delete-account flow, where
+    the caller is identified by their session/JWT rather than a login
+    form. Returns False (not an exception) for an unknown user_id so
+    callers can treat "user vanished" and "wrong password" identically."""
+    db = get_db()
+    user = db.users.find_one({"id": user_id})
+    if not user:
+        return False
+    return _verify_password(password, user["password_hash"], user["salt"])
+
+
 def authenticate(email: str, password: str) -> dict | None:
     """Returns {"id", "name", "email"} on success, None on bad credentials."""
     email = (email or "").strip().lower()

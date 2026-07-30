@@ -1,8 +1,11 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from api.config import AUTH_COOKIE_NAME, IS_PRODUCTION, JWT_EXPIRE_DAYS
 from api.deps import get_current_user
 from api.schemas.auth import (
+    DeleteAccountRequest,
     ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
@@ -11,7 +14,9 @@ from api.schemas.auth import (
     UserResponse,
 )
 from api.security import create_access_token
-from database import auth
+from database import auth, crud
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -80,3 +85,28 @@ def reset_password(body: ResetPasswordRequest):
 @router.get("/me", response_model=UserResponse)
 def me(current_user: dict = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(body: DeleteAccountRequest, response: Response, current_user: dict = Depends(get_current_user)):
+    """Password re-verification is the authorization check here, in place of
+    an ownership lookup (there's no other account to compare against - the
+    JWT already scopes this to current_user's own id, so this can never
+    delete another user's account). 403, not 401, on a wrong password:
+    apiClient's response interceptor (frontend/src/api/client.ts) treats any
+    401 as "session expired" and force-redirects to /login, which would
+    yank the user away before they ever saw the "incorrect password"
+    message."""
+    if not auth.verify_password(current_user["id"], body.password):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Incorrect password.")
+
+    try:
+        crud.delete_user_account(current_user["id"])
+    except Exception:
+        logger.exception(f"Account deletion failed for user {current_user['id']}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed. Please try again.",
+        )
+
+    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")

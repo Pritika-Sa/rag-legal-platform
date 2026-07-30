@@ -274,7 +274,7 @@ def render():
                     error_key = f"simplify_error_{cid}"
 
                     if result_key not in st.session_state:
-                        with st.spinner("Agent 7 is translating legalese to plain English..."):
+                        with st.spinner("Generating plain-English redraft..."):
                             try:
                                 from agents.simplification_agent import simplify_clause
                                 st.session_state[result_key] = simplify_clause(text_content)
@@ -307,7 +307,7 @@ def render():
                         st.error(f"Simplification failed: {st.session_state.get(error_key, 'unknown error')}")
 
                     if st.button("🔄 Regenerate with AI (Agent 7)", key=f"simplify_regen_{cid}"):
-                        with st.spinner("Agent 7 is translating legalese to plain English..."):
+                        with st.spinner("Generating new plain-English redraft..."):
                             try:
                                 from agents.simplification_agent import simplify_clause
                                 st.session_state[result_key] = simplify_clause(text_content)

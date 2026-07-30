@@ -435,7 +435,19 @@ def render():
             with st.spinner("Computing a fresh rule-based estimate…"):
                 try:
                     from agents.risk_scoring_agent import assess_document_risk
-                    st.session_state[quick_estimate_key] = assess_document_risk(doc_name, clauses)
+                    risk_result = assess_document_risk(doc_name, clauses)
+                    st.session_state[quick_estimate_key] = risk_result
+                    # Persist as the document's canonical risk score/level so
+                    # the Dashboard/chatbot/Risk Overview API (all Mongo
+                    # readers) match exactly what's about to render below,
+                    # instead of staying frozen at the ingestion-time value
+                    # computed once by agents/orchestrator.py.
+                    crud.update_document_analysis(
+                        doc_id,
+                        document_risk_score=risk_result.risk_score,
+                        document_risk_level=risk_result.risk_level,
+                        document_risk_recommendations=risk_result.recommendations,
+                    )
                 except Exception as e:
                     st.error(f"Failed to generate document risk score: {e}")
 

@@ -77,6 +77,18 @@ export function useLogoutMutation() {
   });
 }
 
+export function useDeleteAccountMutation() {
+  const clear = useAuthStore((s) => s.clear);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (password: string) => authApi.deleteAccount(password),
+    onSuccess: () => {
+      clear();
+      queryClient.clear();
+    },
+  });
+}
+
 export function useForgotPasswordMutation() {
   return useMutation({
     mutationFn: (email: string) => authApi.forgotPassword(email),
