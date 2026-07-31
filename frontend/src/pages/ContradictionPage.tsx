@@ -1,6 +1,7 @@
 import { Alert, Box, Button, CircularProgress, Stack, Typography } from "@mui/material";
 import { ContradictionCard } from "../components/contradiction/ContradictionCard";
 import { PageHeader } from "../components/common/PageHeader";
+import { S } from "../components/common/S";
 import { useContradictionsQuery, useReanalyzeContradictionsMutation } from "../hooks/useContradictions";
 import { useActiveDocumentStore } from "../store/activeDocumentStore";
 
@@ -25,20 +26,20 @@ export function ContradictionPage() {
       />
 
       {!activeDocId && (
-        <Alert severity="warning">Please select an active document in the sidebar to review contradictions.</Alert>
+        <Alert severity="warning"><S text="Please select an active document in the sidebar to review contradictions." /></Alert>
       )}
 
       {activeDocId && contradictionsQuery.isLoading && (
         <Box sx={{ textAlign: "center", py: 6 }}>
           <CircularProgress />
           <Typography variant="body2" sx={{ mt: 2, opacity: 0.7, maxWidth: 480, mx: "auto" }}>
-            Finding contradictions and inconsistencies in this document… This may take a few seconds, depending on the document's length and complexity.
+            <S text="Finding contradictions and inconsistencies in this document… This may take a few seconds, depending on the document's length and complexity." />
           </Typography>
         </Box>
       )}
 
       {activeDocId && contradictionsQuery.isError && (
-        <Alert severity="error">Failed to load contradictions for this document.</Alert>
+        <Alert severity="error"><S text="Failed to load contradictions for this document." /></Alert>
       )}
 
       {activeDocId && contradictionsQuery.isSuccess && (
@@ -46,11 +47,11 @@ export function ContradictionPage() {
           <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 2 }}>
             {contradictions.length > 0 ? (
               <Typography variant="h6">
-                Found <strong>{contradictions.length}</strong> internal conflicts:
+                <S text="Found" /> <strong>{contradictions.length}</strong> <S text="internal conflicts:" />
               </Typography>
             ) : (
               <Alert severity="success" sx={{ flexGrow: 1, mr: 2 }}>
-                ✅ No conflicting clauses or internal contradictions were detected in this agreement!
+                ✅ <S text="No conflicting clauses or internal contradictions were detected in this agreement!" />
               </Alert>
             )}
             <Button
@@ -58,11 +59,11 @@ export function ContradictionPage() {
               onClick={() => reanalyzeMutation.mutate()}
               loading={reanalyzeMutation.isPending}
             >
-              🔄 Re-analyze with AI
+              🔄 <S text="Re-analyze with AI" />
             </Button>
           </Stack>
 
-          {reanalyzeMutation.isError && <Alert severity="error" sx={{ mb: 2 }}>Failed to re-analyze this document.</Alert>}
+          {reanalyzeMutation.isError && <Alert severity="error" sx={{ mb: 2 }}><S text="Failed to re-analyze this document." /></Alert>}
 
           {contradictions.map((c) => (
             <ContradictionCard key={c.id} contradiction={c} />

@@ -2,6 +2,7 @@ import { Alert, Box, CircularProgress, Grid, Stack, Typography } from "@mui/mate
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/common/PageHeader";
 import { PlotlyChart } from "../components/common/PlotlyChart";
+import { S } from "../components/common/S";
 import { MetricCard } from "../components/dashboard/MetricCard";
 import { useDashboardQuery } from "../hooks/useDocuments";
 import { useActiveDocumentStore } from "../store/activeDocumentStore";
@@ -28,7 +29,7 @@ export function DashboardPage() {
 
       {!activeDocId && (
         <Alert severity="warning">
-          Please select an active document in the sidebar to view its dashboard metrics.
+          <S text="Please select an active document in the sidebar to view its dashboard metrics." />
         </Alert>
       )}
 
@@ -39,7 +40,7 @@ export function DashboardPage() {
       )}
 
       {activeDocId && dashboardQuery.isError && (
-        <Alert severity="error">Failed to load dashboard metrics for this document.</Alert>
+        <Alert severity="error"><S text="Failed to load dashboard metrics for this document." /></Alert>
       )}
 
       {activeDocId && dashboardQuery.data && (
@@ -87,7 +88,7 @@ export function DashboardPage() {
               </Grid>
             </Grid>
           ) : (
-            <Alert severity="info">Upload and parse a document to view risk distributions.</Alert>
+            <Alert severity="info"><S text="Upload and parse a document to view risk distributions." /></Alert>
           )}
         </>
       )}
@@ -105,7 +106,10 @@ function RiskDistributionBullets({ distribution }: { distribution: Record<string
         const pct = total ? Math.round((100 * count) / total) : 0;
         return (
           <Typography key={level} variant="body2">
-            <strong>{level} Risk:</strong> {count} clause{count !== 1 ? "s" : ""} ({pct}%)
+            <strong>
+              <S text={level} /> <S text="Risk:" />
+            </strong>{" "}
+            {count} <S text={count !== 1 ? "clauses" : "clause"} /> ({pct}%)
           </Typography>
         );
       })}

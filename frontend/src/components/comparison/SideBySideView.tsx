@@ -1,5 +1,6 @@
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Grid, Typography } from "@mui/material";
 import type { ClauseForComparison } from "../../api/comparisonApi";
+import { S } from "../common/S";
 
 interface SideBySideViewProps {
   clausesA: ClauseForComparison[];
@@ -23,26 +24,32 @@ export function SideBySideView({ clausesA, clausesB, docAName, docBName }: SideB
   return (
     <>
       <Typography variant="h6" sx={{ mb: 2 }}>
-        📖 Side-by-Side Reference
+        📖 <S text="Side-by-Side Reference" />
       </Typography>
       {allClasses.map((cType) => {
-        const textA = dictA[cType] ?? "*(Clause not present in Agreement A)*";
-        const textB = dictB[cType] ?? "*(Clause not present in Agreement B)*";
+        const textA = dictA[cType];
+        const textB = dictB[cType];
         return (
           <Accordion key={cType} disableGutters sx={{ mb: 1 }}>
-            <AccordionSummary>Type: {cType}</AccordionSummary>
+            <AccordionSummary>
+              <S text="Type:" /> {cType}
+            </AccordionSummary>
             <AccordionDetails>
               <Grid container spacing={2}>
                 <Grid size={6}>
-                  <Typography variant="subtitle2">Document 1 ({docAName}):</Typography>
+                  <Typography variant="subtitle2">
+                    <S text="Document 1" /> ({docAName}):
+                  </Typography>
                   <Alert severity="info" sx={{ mt: 1 }}>
-                    {textA}
+                    {textA ?? <S text="*(Clause not present in Agreement A)*" />}
                   </Alert>
                 </Grid>
                 <Grid size={6}>
-                  <Typography variant="subtitle2">Document 2 ({docBName}):</Typography>
+                  <Typography variant="subtitle2">
+                    <S text="Document 2" /> ({docBName}):
+                  </Typography>
                   <Alert severity="info" sx={{ mt: 1 }}>
-                    {textB}
+                    {textB ?? <S text="*(Clause not present in Agreement B)*" />}
                   </Alert>
                 </Grid>
               </Grid>

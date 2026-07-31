@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { Badge } from "../components/common/Badge";
 import { PageHeader } from "../components/common/PageHeader";
 import { PlotlyChart } from "../components/common/PlotlyChart";
+import { S } from "../components/common/S";
+import { T } from "../components/common/T";
 import { MetricCard } from "../components/dashboard/MetricCard";
 import { AuthenticityBreakdown } from "../components/risk/AuthenticityBreakdown";
 import { FlaggedClauseCard } from "../components/risk/FlaggedClauseCard";
@@ -60,7 +62,7 @@ export function RiskAnalysisPage() {
           title="Risk Analysis & Mitigation Advisor"
           subtitle="A plain-English breakdown of document-wide risk and authenticity, plus every flagged clause explained."
         />
-        <Alert severity="warning">Please select an active document in the sidebar to review risks.</Alert>
+        <Alert severity="warning"><S text="Please select an active document in the sidebar to review risks." /></Alert>
       </>
     );
   }
@@ -76,7 +78,7 @@ export function RiskAnalysisPage() {
 
       {/* Overview */}
       <Typography variant="h6" sx={{ mb: 1.5 }}>
-        📊 Risk Overview
+        📊 <S text="Risk Overview" />
       </Typography>
       <Grid container spacing={2} sx={{ mb: 2, alignItems: "flex-start" }}>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -93,7 +95,7 @@ export function RiskAnalysisPage() {
               {authenticity?.authenticity_score !== undefined && authenticity?.authenticity_score !== null && (
                 <Box sx={{ textAlign: "center", mt: 1 }}>
                   <Badge
-                    label={(authenticity.authenticity_level ?? "").toUpperCase()}
+                    label={<S text={(authenticity.authenticity_level ?? "").toUpperCase()} />}
                     color={AUTHENTICITY_LEVEL_COLORS[authenticity.authenticity_level ?? ""] ?? "#888888"}
                   />
                 </Box>
@@ -106,14 +108,14 @@ export function RiskAnalysisPage() {
                 onClick={() => recomputeMutation.mutate()}
                 loading={recomputeMutation.isPending}
               >
-                🔄 Recompute Authenticity
+                🔄 <S text="Recompute Authenticity" />
               </Button>
-              {recomputeMutation.isError && <Alert severity="error" sx={{ mt: 1 }}>Failed to recompute authenticity.</Alert>}
+              {recomputeMutation.isError && <Alert severity="error" sx={{ mt: 1 }}><S text="Failed to recompute authenticity." /></Alert>}
 
               {authenticity?.authenticity_factors && authenticity.authenticity_factors.length > 0 && (
                 <Box sx={{ mt: 1.5 }}>
                   <Button variant="text" size="small" onClick={() => setBreakdownOpen(!breakdownOpen)}>
-                    {breakdownOpen ? "Hide" : "🔍 Authenticity Factor Breakdown"}
+                    {breakdownOpen ? <S text="Hide" /> : <>🔍 <S text="Authenticity Factor Breakdown" /></>}
                   </Button>
                   {breakdownOpen && (
                     <Box sx={{ mt: 1 }}>
@@ -137,7 +139,7 @@ export function RiskAnalysisPage() {
               variant="caption"
               sx={{ opacity: 0.65, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}
             >
-              📊 Document Risk
+              📊 <S text="Document Risk" />
             </Typography>
             <Button
               variant="contained"
@@ -146,26 +148,26 @@ export function RiskAnalysisPage() {
               onClick={() => quickEstimateMutation.mutate()}
               loading={quickEstimateMutation.isPending}
             >
-              ⚡ Quick Estimate
+              ⚡ <S text="Quick Estimate" />
             </Button>
-            
 
-            {quickEstimateMutation.isError && <Alert severity="error" sx={{ mt: 1 }}>Failed to generate document risk score.</Alert>}
+
+            {quickEstimateMutation.isError && <Alert severity="error" sx={{ mt: 1 }}><S text="Failed to generate document risk score." /></Alert>}
 
             {quickEstimateMutation.data && (
               <Box sx={{ mt: 2 }}>
                 <PlotlyChart figure={quickEstimateMutation.data.risk_gauge_chart} height={220} />
                 <Box sx={{ mt: 1 }}>
                   <Badge
-                    label={quickEstimateMutation.data.risk_level.toUpperCase()}
+                    label={<S text={quickEstimateMutation.data.risk_level.toUpperCase()} />}
                     color={RISK_COLORS[quickEstimateMutation.data.risk_level] ?? "#888888"}
                   />
                 </Box>
                 <Typography variant="subtitle2" sx={{ mt: 1.5, textAlign: "left" }}>
-                  Recommendations
+                  <S text="Recommendations" />
                 </Typography>
                 <Typography variant="body2" sx={{ textAlign: "left" }}>
-                  {quickEstimateMutation.data.recommendations}
+                  <T text={quickEstimateMutation.data.recommendations} />
                 </Typography>
               </Box>
             )}
@@ -181,7 +183,7 @@ export function RiskAnalysisPage() {
       )}
 
       {riskyClausesQuery.isSuccess && riskyClauses.length === 0 && (
-        <Alert severity="success">✅ Excellent! No High or Medium risk clauses were detected in this agreement.</Alert>
+        <Alert severity="success">✅ <S text="Excellent! No High or Medium risk clauses were detected in this agreement." /></Alert>
       )}
 
       {riskyClauses.length > 0 && (
@@ -192,11 +194,11 @@ export function RiskAnalysisPage() {
                 select
                 fullWidth
                 size="small"
-                label="🏷 Category"
+                label={<>🏷 <S text="Category" /></>}
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
               >
-                <MenuItem value="All Categories">All Categories</MenuItem>
+                <MenuItem value="All Categories"><S text="All Categories" /></MenuItem>
                 {categories.map((c) => (
                   <MenuItem key={c} value={c}>
                     {c}
@@ -209,19 +211,19 @@ export function RiskAnalysisPage() {
                 select
                 fullWidth
                 size="small"
-                label="⚠ Risk Level"
+                label={<>⚠ <S text="Risk Level" /></>}
                 value={levelFilter}
                 onChange={(e) => setLevelFilter(e.target.value)}
               >
-                <MenuItem value="All Levels">All Levels</MenuItem>
-                <MenuItem value="High">High</MenuItem>
-                <MenuItem value="Medium">Medium</MenuItem>
+                <MenuItem value="All Levels"><S text="All Levels" /></MenuItem>
+                <MenuItem value="High"><S text="High" /></MenuItem>
+                <MenuItem value="Medium"><S text="Medium" /></MenuItem>
               </TextField>
             </Grid>
           </Grid>
 
           {filtered.length === 0 ? (
-            <Alert severity="info">No flagged clauses match the selected filters.</Alert>
+            <Alert severity="info"><S text="No flagged clauses match the selected filters." /></Alert>
           ) : (
             <>
               <Grid container spacing={2} sx={{ mb: 2 }}>

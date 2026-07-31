@@ -3,9 +3,11 @@ import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useAskQuestionMutation } from "../../hooks/useChat";
 import { useDocumentsQuery } from "../../hooks/useDocuments";
+import { useStaticText } from "../../hooks/useStaticText";
 import { useActiveDocumentStore } from "../../store/activeDocumentStore";
 import { useChatStore } from "../../store/chatStore";
 import { useComparisonStore } from "../../store/comparisonStore";
+import { S } from "../common/S";
 import { ChatBubble } from "./ChatBubble";
 
 const SUGGESTED_QUESTIONS = [
@@ -30,6 +32,7 @@ export function ChatPanel() {
   const askMutation = useAskQuestionMutation();
   const [inputValue, setInputValue] = useState("");
   const [comparisonScope, setComparisonScope] = useState<number | null>(null);
+  const askPlaceholder = useStaticText("Ask a legal question…");
 
   if (!isOpen) return null;
 
@@ -37,13 +40,26 @@ export function ChatPanel() {
   const bothComparisonDocsSelected = inComparison && docAId !== null && docBId !== null;
 
   let targetDocId: number | null = activeDocId;
-  let scopeCaption = targetDocId ? `Scope: active document (${activeDocName})` : "Scope: entire workspace";
+  // JSX (not a plain string) so the static "Scope:" wording can be
+  // translated while the dynamic document name stays exactly as stored.
+  let scopeCaption: React.ReactNode = targetDocId ? (
+    <>
+      <S text="Scope: active document" /> ({activeDocName})
+    </>
+  ) : (
+    <S text="Scope: entire workspace" />
+  );
 
   if (bothComparisonDocsSelected) {
     const allDocs = new Map((documentsQuery.data ?? []).map((d) => [d.id, d.name]));
     const scopeChoice = comparisonScope ?? docAId!;
     targetDocId = scopeChoice;
-    scopeCaption = `Scope: ${allDocs.get(scopeChoice) ?? "compared document"} (Comparison Center)`;
+    const compareDocName = allDocs.get(scopeChoice);
+    scopeCaption = (
+      <>
+        <S text="Scope:" /> {compareDocName ?? <S text="compared document" />} (<S text="Comparison Center" />)
+      </>
+    );
   }
 
   const submitQuery = (query: string) => {
@@ -94,21 +110,25 @@ export function ChatPanel() {
       }}
     >
       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-        💬 Legal AI Assistant
+        💬 <S text="Legal AI Assistant" />
       </Typography>
 
       {bothComparisonDocsSelected ? (
         <TextField
           select
           size="small"
-          label="Answer using:"
+          label={<S text="Answer using:" />}
           value={comparisonScope ?? docAId}
           onChange={(e) => setComparisonScope(Number(e.target.value))}
           sx={{ mb: 1 }}
         >
           {[docAId, docBId].map((id) => (
             <MenuItem key={id} value={id!}>
-              {documentsQuery.data?.find((d) => d.id === id)?.name ?? `Doc ${id}`}
+              {documentsQuery.data?.find((d) => d.id === id)?.name ?? (
+                <>
+                  <S text="Doc" /> {id}
+                </>
+              )}
             </MenuItem>
           ))}
         </TextField>
@@ -119,10 +139,10 @@ export function ChatPanel() {
 
       <Stack direction="row" sx={{ gap: 1, mb: 1 }}>
         <Button size="small" fullWidth onClick={clearMessages}>
-          🗑️ Clear Chat
+          🗑️ <S text="Clear Chat" />
         </Button>
         <Button size="small" fullWidth onClick={close}>
-          ➖ Minimize
+          ➖ <S text="Minimize" />
         </Button>
       </Stack>
 
@@ -130,12 +150,12 @@ export function ChatPanel() {
         {messages.length === 0 && (
           <Box sx={{ mb: 1 }}>
             <Typography variant="caption" sx={{ opacity: 0.65 }}>
-              Suggested questions:
+              <S text="Suggested questions:" />
             </Typography>
             <Stack sx={{ gap: 0.5, mt: 0.5 }}>
               {SUGGESTED_QUESTIONS.map((q) => (
                 <Button key={q} size="small" variant="outlined" onClick={() => submitQuery(q)}>
-                  {q}
+                  <S text={q} />
                 </Button>
               ))}
             </Stack>
@@ -148,7 +168,7 @@ export function ChatPanel() {
 
         {askMutation.isPending && (
           <Typography variant="caption" sx={{ opacity: 0.6 }}>
-            Legal AI is thinking… (this may take a few seconds)
+            <S text="Legal AI is thinking… (this may take a few seconds)" />
           </Typography>
         )}
       </Box>
@@ -157,7 +177,7 @@ export function ChatPanel() {
         <TextField
           size="small"
           fullWidth
-          placeholder="Ask a legal question…"
+          placeholder={askPlaceholder}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
         />

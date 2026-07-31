@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { extractErrorMessage } from "../../api/authApi";
 import { extractAlreadyAnalyzedDocId } from "../../api/documentsApi";
 import { useProcessMutation, useUploadMutation } from "../../hooks/useDocuments";
+import { S } from "../common/S";
+import { T } from "../common/T";
 import { useActiveDocumentStore } from "../../store/activeDocumentStore";
 import { ALLOWED_UPLOAD_EXTENSIONS, validateUploadFile } from "../../utils/uploadValidation";
 
@@ -83,20 +85,20 @@ export function UploadPanel() {
         onClick={() => inputRef.current?.click()}
         loading={uploadMutation.isPending}
       >
-        📤 Upload a document
+        📤 <S text="Upload a document" />
       </Button>
       <Typography sx={{ fontSize: "0.7rem", color: "text.secondary", mt: 0.65, lineHeight: 1.45 }}>
-        PDF, Word, or text contracts. Images are OCR&apos;d automatically before analysis.
+        <S text="PDF, Word, or text contracts. Images are OCR'd automatically before analysis." />
       </Typography>
 
       {clientError && (
         <Alert severity="error" sx={{ fontSize: "0.78rem", mt: 1 }}>
-          {clientError}
+          <T text={clientError} />
         </Alert>
       )}
       {uploadMutation.isError && (
         <Alert severity="error" sx={{ fontSize: "0.78rem", mt: 1 }}>
-          {extractErrorMessage(uploadMutation.error, "Upload failed.")}
+          <T text={extractErrorMessage(uploadMutation.error, "Upload failed.")} />
         </Alert>
       )}
 
@@ -104,18 +106,18 @@ export function UploadPanel() {
         <Box sx={{ mt: 1 }}>
           {!processMutation.isError && (
             <Alert severity="success" sx={{ fontSize: "0.78rem" }}>
-              &apos;{uploadMutation.data.name}&apos; uploaded.
+              &apos;{uploadMutation.data.name}&apos; <S text="uploaded." />
             </Alert>
           )}
 
           {alreadyAnalyzedDocId !== null && (
             <Alert severity="warning" sx={{ fontSize: "0.78rem", mt: 1 }}>
-              This document has already been analyzed.
+              <S text="This document has already been analyzed." />
             </Alert>
           )}
           {processMutation.isError && alreadyAnalyzedDocId === null && (
             <Alert severity="error" sx={{ fontSize: "0.78rem", mt: 1 }}>
-              {extractErrorMessage(processMutation.error, "An error occurred during analysis.")}
+              <T text={extractErrorMessage(processMutation.error, "An error occurred during analysis.")} />
             </Alert>
           )}
 
@@ -127,11 +129,11 @@ export function UploadPanel() {
             loading={processMutation.isPending}
             disabled={alreadyAnalyzedDocId !== null}
           >
-            🚀 Process Document
+            🚀 <S text="Process Document" />
           </Button>
           {processMutation.isPending && (
             <Typography sx={{ fontSize: "0.7rem", opacity: 0.6, mt: 0.5, textAlign: "center" }}>
-              Processing Status: running multi-agent analysis…
+              <S text="Processing Status: running multi-agent analysis…" />
             </Typography>
           )}
         </Box>
@@ -140,14 +142,15 @@ export function UploadPanel() {
       {processMutation.isSuccess && showProcessSuccess && (
         <Box sx={{ mt: 1 }}>
           <Alert severity="success" sx={{ fontSize: "0.78rem" }}>
-            🎉 &apos;{uploadMutation.data?.name}&apos; processed — {processMutation.data.clause_count} clauses found.
+            🎉 &apos;{uploadMutation.data?.name}&apos; <S text="processed" /> — {processMutation.data.clause_count}{" "}
+            <S text="clauses found." />
           </Alert>
           <Typography sx={{ fontSize: "0.72rem", opacity: 0.65, mt: 0.5 }}>
-            Risk {processMutation.data.document_risk_score}/100
+            <S text="Risk" /> {processMutation.data.document_risk_score}/100
           </Typography>
           {processMutation.data.parsing_quality_warning && (
             <Alert severity="warning" sx={{ fontSize: "0.75rem", mt: 0.5 }}>
-              ⚠️ {processMutation.data.parsing_quality_warning}
+              ⚠️ <T text={processMutation.data.parsing_quality_warning} />
             </Alert>
           )}
         </Box>

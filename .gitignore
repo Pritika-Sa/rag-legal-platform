@@ -184,3 +184,6 @@ pnpm-debug.log*
 tests/
 
 git add debug/*.py
+
+# Translation cache
+cache/

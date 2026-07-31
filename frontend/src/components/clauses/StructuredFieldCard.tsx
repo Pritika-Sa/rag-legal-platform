@@ -1,5 +1,6 @@
 import { Box, Typography } from "@mui/material";
 import type { ClauseWithIntelligence } from "../../api/clausesApi";
+import { S } from "../common/S";
 
 interface StructuredFieldCardProps {
   clause: ClauseWithIntelligence;
@@ -19,7 +20,7 @@ export function StructuredFieldCard({ clause }: StructuredFieldCardProps) {
         {clause.section_name}
       </Typography>
       <Typography variant="body2" sx={{ mt: 0.5 }}>
-        {clause.text_content || "No value extracted."}
+        {clause.text_content || <S text="No value extracted." />}
       </Typography>
     </Box>
   );

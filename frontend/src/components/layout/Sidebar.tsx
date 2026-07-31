@@ -18,6 +18,8 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { extractErrorMessage } from "../../api/authApi";
+import { S } from "../common/S";
+import { T } from "../common/T";
 import { useDeleteAccountMutation, useLogoutMutation } from "../../hooks/useAuth";
 import { useDeleteMutation, useDocumentsQuery } from "../../hooks/useDocuments";
 import { useActiveDocumentStore } from "../../store/activeDocumentStore";
@@ -111,7 +113,7 @@ export function Sidebar() {
           ⚖️ LQ-LegalAI
         </Box>
         <Box sx={{ fontSize: "0.68rem", textTransform: "uppercase", letterSpacing: "0.12em", opacity: 0.55, mt: 0.5 }}>
-          Legal Intelligence Platform
+          <S text="Legal Intelligence Platform" />
         </Box>
       </Box>
 
@@ -139,7 +141,7 @@ export function Sidebar() {
       </Stack>
 
       <Button variant="outlined" fullWidth onClick={handleLogout} loading={logoutMutation.isPending} sx={{ flexShrink: 0 }}>
-        Log Out
+        <S text="Log Out" />
       </Button>
 
       <Button
@@ -150,34 +152,33 @@ export function Sidebar() {
         onClick={() => setDeleteDialogOpen(true)}
         sx={{ flexShrink: 0, mt: 0.5, fontSize: "0.72rem" }}
       >
-        Delete Account
+        <S text="Delete Account" />
       </Button>
 
       <Dialog open={deleteDialogOpen} onClose={closeDeleteAccountDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete your account?</DialogTitle>
+        <DialogTitle><S text="Delete your account?" /></DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            This permanently deletes your account, every document you've uploaded, and all associated analysis
-            data. This cannot be undone.
+            <S text="This permanently deletes your account, every document you've uploaded, and all associated analysis data. This cannot be undone." />
           </DialogContentText>
           <TextField
             autoFocus
             fullWidth
             type="password"
-            label="Confirm your password"
+            label={<S text="Confirm your password" />}
             value={deletePassword}
             onChange={(e) => setDeletePassword(e.target.value)}
             disabled={deleteAccountMutation.isPending}
           />
           {deleteAccountMutation.isError && (
             <Alert severity="error" sx={{ mt: 2 }}>
-              {extractErrorMessage(deleteAccountMutation.error, "Failed to delete account.")}
+              <T text={extractErrorMessage(deleteAccountMutation.error, "Failed to delete account.")} />
             </Alert>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDeleteAccountDialog} disabled={deleteAccountMutation.isPending}>
-            Cancel
+            <S text="Cancel" />
           </Button>
           <Button
             color="error"
@@ -186,7 +187,7 @@ export function Sidebar() {
             disabled={!deletePassword || deleteAccountMutation.isPending}
             loading={deleteAccountMutation.isPending}
           >
-            Delete My Account
+            <S text="Delete My Account" />
           </Button>
         </DialogActions>
       </Dialog>
@@ -194,14 +195,14 @@ export function Sidebar() {
       <Box sx={{ borderTop: "1px solid", borderColor: "divider", my: 2 }} />
 
       <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
-        📁 Document Management
+        📁 <S text="Document Management" />
       </Typography>
 
       <UploadPanel />
 
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 1, flexShrink: 0 }}>
         <Typography sx={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "text.secondary" }}>
-          Your documents
+          <S text="Your documents" />
         </Typography>
         <Chip label={documentsQuery.data?.length ?? 0} size="small" sx={{ height: 20, minWidth: 28, fontSize: "0.68rem", fontWeight: 700, bgcolor: "rgba(99, 110, 250, 0.10)", color: "primary.main" }} />
       </Stack>
@@ -212,9 +213,9 @@ export function Sidebar() {
             <CircularProgress size={22} />
           </Box>
         )}
-        {documentsQuery.isError && <Alert severity="error" sx={{ fontSize: "0.8rem" }}>Failed to load documents.</Alert>}
+        {documentsQuery.isError && <Alert severity="error" sx={{ fontSize: "0.8rem" }}><S text="Failed to load documents." /></Alert>}
         {documentsQuery.data?.length === 0 && (
-          <Alert severity="info" sx={{ fontSize: "0.8rem" }}>No documents yet.</Alert>
+          <Alert severity="info" sx={{ fontSize: "0.8rem" }}><S text="No documents yet." /></Alert>
         )}
         {documentsQuery.data?.map((doc) => {
           const isActive = doc.id === activeDocId;
@@ -241,7 +242,7 @@ export function Sidebar() {
                   {fileType(doc.name).toUpperCase()}
                 </Typography>
                 <Chip
-                  label={doc.status}
+                  label={<S text={doc.status} />}
                   size="small"
                   sx={{
                     height: 18,
@@ -261,7 +262,7 @@ export function Sidebar() {
                   onClick={() => setActiveDocument(doc.id, doc.name)}
                   sx={{ flex: 1, fontSize: "0.72rem" }}
                 >
-                  {isActive ? "✓ Active" : "Set Active"}
+                  {isActive ? <>✓ <S text="Active" /></> : <S text="Set Active" />}
                 </Button>
                 <Button
                   size="small"
@@ -271,7 +272,7 @@ export function Sidebar() {
                   loading={isDeletingThis}
                   sx={{ flex: 1, fontSize: "0.72rem" }}
                 >
-                  Delete
+                  <S text="Delete" />
                 </Button>
               </Stack>
             </Box>

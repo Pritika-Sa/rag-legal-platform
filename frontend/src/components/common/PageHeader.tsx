@@ -1,5 +1,6 @@
 import { Box, Chip, Stack, Typography } from "@mui/material";
 import type { ReactNode } from "react";
+import { S } from "./S";
 
 interface PageHeaderProps {
   icon: ReactNode;
@@ -37,11 +38,11 @@ export function PageHeader({ icon, title, subtitle, badge, docName }: PageHeader
         <Box sx={{ minWidth: 0 }}>
           <Stack direction="row" sx={{ alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
             <Typography variant="h5" sx={{ fontSize: "1.35rem", m: 0, letterSpacing: "-0.02em" }}>
-              {title}
+              <S text={title} />
             </Typography>
             {badge && (
               <Chip
-                label={badge}
+                label={<S text={badge} />}
                 size="small"
                 sx={{
                   fontSize: "0.68rem",
@@ -57,13 +58,13 @@ export function PageHeader({ icon, title, subtitle, badge, docName }: PageHeader
             )}
           </Stack>
           <Typography variant="body2" sx={{ mt: 0.5, color: "text.secondary", maxWidth: 820 }}>
-            {subtitle}
+            <S text={subtitle} />
           </Typography>
         </Box>
       </Stack>
 
       <Chip
-        label={docName ?? "No active document"}
+        label={docName ?? <S text="No active document" />}
         size="small"
         sx={{
           flexShrink: 0,

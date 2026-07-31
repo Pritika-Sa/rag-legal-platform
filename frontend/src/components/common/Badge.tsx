@@ -1,7 +1,8 @@
 import { Box } from "@mui/material";
+import type { ReactNode } from "react";
 
 interface BadgeProps {
-  label: string;
+  label: ReactNode;
   color: string;
 }
 

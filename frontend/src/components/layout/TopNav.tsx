@@ -1,5 +1,7 @@
 import { Box, Button, Stack } from "@mui/material";
 import { Link, useLocation } from "react-router-dom";
+import { S } from "../common/S";
+import { useTranslationStore } from "../../store/translationStore";
 
 // Direct port of app.py's NAV_ITEMS / sticky pill nav — same 5 pages, same
 // order, same icons/labels. Active-state is computed explicitly from the
@@ -9,15 +11,17 @@ import { Link, useLocation } from "react-router-dom";
 // wrapped MUI Button (MUI resolves `className` to a plain string before
 // NavLink ever sees it, so NavLink's own active-class injection never fires).
 const NAV_ITEMS = [
-  { to: "/", label: "📊 Dashboard" },
-  { to: "/clauses", label: "🔍 Clause Analysis" },
-  { to: "/risk", label: "⚠️ Risk Analysis" },
-  { to: "/contradiction", label: "⚡ Contradiction Detection" },
-  { to: "/comparison", label: "🔀 Comparison Center" },
+  { to: "/", icon: "📊", label: "Dashboard" },
+  { to: "/clauses", icon: "🔍", label: "Clause Analysis" },
+  { to: "/risk", icon: "⚠️", label: "Risk Analysis" },
+  { to: "/contradiction", icon: "⚡", label: "Contradiction Detection" },
+  { to: "/comparison", icon: "🔀", label: "Comparison Center" },
 ];
 
 export function TopNav() {
   const { pathname } = useLocation();
+  const translationEnabled = useTranslationStore((s) => s.enabled);
+  const toggleTranslation = useTranslationStore((s) => s.toggle);
 
   return (
     <Box
@@ -33,43 +37,62 @@ export function TopNav() {
         overflowX: "auto",
       }}
     >
-      <Stack
-        direction="row"
-        sx={{
-          gap: 0.75,
-          width: { xs: "max-content", md: "100%" },
-          minWidth: "max-content",
-          p: 0.5,
-          bgcolor: "#eef0f7",
-          borderRadius: 2.5,
-        }}
-      >
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.to;
-          return (
-            <Button
-              key={item.to}
-              component={Link}
-              to={item.to}
-              variant={isActive ? "contained" : "outlined"}
-              color={isActive ? "primary" : "inherit"}
-              sx={{
-                borderRadius: 2,
-                px: 2,
-                minHeight: 38,
-                flex: { md: 1 },
-                whiteSpace: "nowrap",
-                borderColor: isActive ? "transparent" : "transparent",
-                color: isActive ? "#fff" : "text.secondary",
-                bgcolor: isActive ? "primary.main" : "transparent",
-                boxShadow: isActive ? "0 4px 12px rgba(99, 110, 250, 0.28)" : "none",
-                "&:hover": { bgcolor: isActive ? "primary.dark" : "rgba(99, 110, 250, 0.08)", borderColor: "transparent" },
-              }}
-            >
-              {item.label}
-            </Button>
-          );
-        })}
+      <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
+        <Stack
+          direction="row"
+          sx={{
+            gap: 0.75,
+            width: { xs: "max-content", md: "100%" },
+            minWidth: "max-content",
+            p: 0.5,
+            bgcolor: "#eef0f7",
+            borderRadius: 2.5,
+            flexGrow: 1,
+          }}
+        >
+          {NAV_ITEMS.map((item) => {
+            const isActive = pathname === item.to;
+            return (
+              <Button
+                key={item.to}
+                component={Link}
+                to={item.to}
+                variant={isActive ? "contained" : "outlined"}
+                color={isActive ? "primary" : "inherit"}
+                sx={{
+                  borderRadius: 2,
+                  px: 2,
+                  minHeight: 38,
+                  flex: { md: 1 },
+                  whiteSpace: "nowrap",
+                  borderColor: isActive ? "transparent" : "transparent",
+                  color: isActive ? "#fff" : "text.secondary",
+                  bgcolor: isActive ? "primary.main" : "transparent",
+                  boxShadow: isActive ? "0 4px 12px rgba(99, 110, 250, 0.28)" : "none",
+                  "&:hover": { bgcolor: isActive ? "primary.dark" : "rgba(99, 110, 250, 0.08)", borderColor: "transparent" },
+                }}
+              >
+                {item.icon} <S text={item.label} />
+              </Button>
+            );
+          })}
+        </Stack>
+
+        <Button
+          onClick={toggleTranslation}
+          variant={translationEnabled ? "contained" : "outlined"}
+          color={translationEnabled ? "primary" : "inherit"}
+          sx={{
+            borderRadius: 2,
+            px: 2,
+            minHeight: 38,
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            color: translationEnabled ? "#fff" : "text.secondary",
+          }}
+        >
+          🌐 <S text={translationEnabled ? "Tamil" : "View in Tamil"} />
+        </Button>
       </Stack>
     </Box>
   );

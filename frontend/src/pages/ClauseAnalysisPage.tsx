@@ -1,10 +1,12 @@
 import { Alert, Box, Button, CircularProgress, Grid, MenuItem, TextField, Typography } from "@mui/material";
 import { useMemo, useState } from "react";
 import { PageHeader } from "../components/common/PageHeader";
+import { S } from "../components/common/S";
 import { MetricCard } from "../components/dashboard/MetricCard";
 import { ClauseCard } from "../components/clauses/ClauseCard";
 import { StructuredFieldCard } from "../components/clauses/StructuredFieldCard";
 import { useClausesQuery } from "../hooks/useClauses";
+import { useStaticText } from "../hooks/useStaticText";
 import { useActiveDocumentStore } from "../store/activeDocumentStore";
 
 const RISK_LEVELS = ["All", "High", "Medium", "Low", "None"];
@@ -22,6 +24,7 @@ export function ClauseAnalysisPage() {
   const [importanceFilter, setImportanceFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [showStructuredFields, setShowStructuredFields] = useState(false);
+  const searchPlaceholder = useStaticText("e.g. termination, liability…");
 
   const clauses = clausesQuery.data ?? [];
 
@@ -103,7 +106,7 @@ export function ClauseAnalysisPage() {
       />
 
       {!activeDocId && (
-        <Alert severity="warning">Please select an active document in the sidebar or upload one to begin.</Alert>
+        <Alert severity="warning"><S text="Please select an active document in the sidebar or upload one to begin." /></Alert>
       )}
 
       {activeDocId && clausesQuery.isLoading && (
@@ -113,11 +116,11 @@ export function ClauseAnalysisPage() {
       )}
 
       {activeDocId && clausesQuery.isError && (
-        <Alert severity="error">Failed to load clauses for this document.</Alert>
+        <Alert severity="error"><S text="Failed to load clauses for this document." /></Alert>
       )}
 
       {activeDocId && clausesQuery.isSuccess && clauses.length === 0 && (
-        <Alert severity="info">No clauses parsed for this document.</Alert>
+        <Alert severity="info"><S text="No clauses parsed for this document." /></Alert>
       )}
 
       {activeDocId && clauses.length > 0 && (
@@ -140,14 +143,14 @@ export function ClauseAnalysisPage() {
                 select
                 fullWidth
                 size="small"
-                label="Clause Type"
+                label={<S text="Clause Type" />}
                 value={classFilter}
                 onChange={(e) => setClassFilter(e.target.value)}
                 disabled={showStructuredFields}
               >
                 {classifications.map((c) => (
                   <MenuItem key={c} value={c}>
-                    {c}
+                    {c === "All" ? <S text="All" /> : c}
                   </MenuItem>
                 ))}
               </TextField>
@@ -157,14 +160,14 @@ export function ClauseAnalysisPage() {
                 select
                 fullWidth
                 size="small"
-                label="Risk Level"
+                label={<S text="Risk Level" />}
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
                 disabled={showStructuredFields}
               >
                 {RISK_LEVELS.map((r) => (
                   <MenuItem key={r} value={r}>
-                    {r}
+                    <S text={r} />
                   </MenuItem>
                 ))}
               </TextField>
@@ -174,14 +177,14 @@ export function ClauseAnalysisPage() {
                 select
                 fullWidth
                 size="small"
-                label="Importance Level"
+                label={<S text="Importance Level" />}
                 value={importanceFilter}
                 onChange={(e) => setImportanceFilter(e.target.value)}
                 disabled={showStructuredFields}
               >
                 {IMPORTANCE_LEVELS.map((i) => (
                   <MenuItem key={i} value={i}>
-                    {i}
+                    <S text={i} />
                   </MenuItem>
                 ))}
               </TextField>
@@ -199,15 +202,21 @@ export function ClauseAnalysisPage() {
                 onClick={() => setShowStructuredFields((v) => !v)}
                 sx={{ height: "40px" }}
               >
-                {showStructuredFields ? "◀ Back to Clauses" : `🗂 View Structured Fields (${structuredFieldClauses.length})`}
+                {showStructuredFields ? (
+                  <>◀ <S text="Back to Clauses" /></>
+                ) : (
+                  <>
+                    🗂 <S text="View Structured Fields" /> ({structuredFieldClauses.length})
+                  </>
+                )}
               </Button>
             </Grid>
             <Grid size={{ xs: 12, sm: 3 }}>
               <TextField
                 fullWidth
                 size="small"
-                label={showStructuredFields ? "Search field label or value" : "Search title or text"}
-                placeholder="e.g. termination, liability…"
+                label={showStructuredFields ? <S text="Search field label or value" /> : <S text="Search title or text" />}
+                placeholder={searchPlaceholder}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -217,12 +226,11 @@ export function ClauseAnalysisPage() {
           {showStructuredFields ? (
             <>
               <Typography variant="body2" sx={{ mb: 2 }}>
-                Showing <strong>{filteredStructuredFields.length}</strong> of{" "}
-                <strong>{structuredFieldClauses.length}</strong> structured field(s) — policy/metadata values, not
-                legal clauses:
+                <S text="Showing" /> <strong>{filteredStructuredFields.length}</strong> <S text="of" />{" "}
+                <strong>{structuredFieldClauses.length}</strong> <S text="structured field(s) — policy/metadata values, not legal clauses:" />
               </Typography>
               {filteredStructuredFields.length === 0 ? (
-                <Alert severity="info">No structured fields match your search.</Alert>
+                <Alert severity="info"><S text="No structured fields match your search." /></Alert>
               ) : (
                 filteredStructuredFields.map((clause) => <StructuredFieldCard key={clause.id} clause={clause} />)
               )}
@@ -230,7 +238,7 @@ export function ClauseAnalysisPage() {
           ) : (
             <>
               <Typography variant="body2" sx={{ mb: 2 }}>
-                Showing <strong>{filtered.length}</strong> of <strong>{legalClauses.length}</strong> clauses:
+                <S text="Showing" /> <strong>{filtered.length}</strong> <S text="of" /> <strong>{legalClauses.length}</strong> <S text="clauses:" />
               </Typography>
               {activeDocId && filtered.map((clause) => (
                 <ClauseCard key={clause.id} docId={activeDocId} clause={clause} />

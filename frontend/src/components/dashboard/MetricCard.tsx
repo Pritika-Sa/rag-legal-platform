@@ -1,5 +1,6 @@
 import { Box, ButtonBase, Typography } from "@mui/material";
 import type { ReactNode } from "react";
+import { S } from "../common/S";
 
 interface MetricCardProps {
   label: string;
@@ -30,7 +31,7 @@ export function MetricCard({ label, value, accent = "primary.main", onClick }: M
           fontWeight: 600,
         }}
       >
-        {label}
+        <S text={label} />
       </Typography>
     </>
   );

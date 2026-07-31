@@ -1,20 +1,33 @@
-import { Alert, Box } from "@mui/material";
+import { Alert, Box, Stack } from "@mui/material";
+import type { ReactNode } from "react";
 import type { HallucinationReport as HallucinationReportData } from "../../api/chatApi";
+import { S } from "../common/S";
 
-const LABEL_WIDTH = 18;
-
-function padLabel(label: string): string {
-  return label.padEnd(LABEL_WIDTH, " ");
+// Row-based (flex column widths), not character-padded like the original
+// Streamlit monospace block — a fixed space-padding width tuned for English
+// label lengths misaligns as soon as the label is translated (Tamil glyphs
+// aren't the same width as Latin ones), so alignment is done with CSS here
+// instead of padEnd().
+function ReportRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Stack direction="row" sx={{ gap: 1 }}>
+      <Box sx={{ width: "9.5em", flexShrink: 0, opacity: 0.75 }}>
+        <S text={label} />
+      </Box>
+      <Box>{value}</Box>
+    </Stack>
+  );
 }
 
-// Direct port of app.py's post-answer hallucination block: same monospace
+// Direct port of app.py's post-answer hallucination block: same
 // trust-score readout, same unsupported-claims warning/success, same
 // >50% hallucination-score extra warning.
 export function HallucinationReport({ hallucination }: { hallucination: HallucinationReportData }) {
   if (hallucination.trust_score === null) {
     return (
-      <Box component="pre" sx={{ fontFamily: "monospace", fontSize: "0.8rem", bgcolor: "action.hover", p: 1.5, borderRadius: 1.5 }}>
-        Trust Score: Unknown{"\n"}Hallucination Check: Failed
+      <Box sx={{ fontFamily: "monospace", fontSize: "0.8rem", bgcolor: "action.hover", p: 1.5, borderRadius: 1.5 }}>
+        <ReportRow label="Trust Score" value="Unknown" />
+        <ReportRow label="Hallucination Check" value="Failed" />
       </Box>
     );
   }
@@ -23,24 +36,17 @@ export function HallucinationReport({ hallucination }: { hallucination: Hallucin
 
   return (
     <>
-      <Box component="pre" sx={{ fontFamily: "monospace", fontSize: "0.8rem", bgcolor: "action.hover", p: 1.5, borderRadius: 1.5 }}>
-        {"------------------------------------\n"}
-        {padLabel("Trust Score")}
-        {hallucination.trust_score}%{"\n"}
-        {padLabel("Hallucination")}
-        {hallucination.hallucination_score}%{"\n"}
-        {padLabel("Confidence")}
-        {hallucination.confidence}%{"\n"}
-        {padLabel("Groundedness")}
-        {hallucination.groundedness}
-        {"\n"}
-        {padLabel("Citation Quality")}
-        {hallucination.citation_quality}
+      <Box sx={{ fontFamily: "monospace", fontSize: "0.8rem", bgcolor: "action.hover", p: 1.5, borderRadius: 1.5 }}>
+        <ReportRow label="Trust Score" value={`${hallucination.trust_score}%`} />
+        <ReportRow label="Hallucination" value={`${hallucination.hallucination_score}%`} />
+        <ReportRow label="Confidence" value={`${hallucination.confidence}%`} />
+        <ReportRow label="Groundedness" value={hallucination.groundedness} />
+        <ReportRow label="Citation Quality" value={hallucination.citation_quality} />
       </Box>
 
       {unsupported.length > 0 ? (
         <Alert severity="warning" sx={{ mt: 1, fontSize: "0.82rem" }}>
-          ⚠ Unsupported Claims
+          ⚠ <S text="Unsupported Claims" />
           <br />
           {unsupported.map((s, i) => (
             <div key={i}>• {s}</div>
@@ -48,13 +54,13 @@ export function HallucinationReport({ hallucination }: { hallucination: Hallucin
         </Alert>
       ) : (
         <Alert severity="success" sx={{ mt: 1, fontSize: "0.82rem" }}>
-          ✅ No unsupported claims detected.
+          ✅ <S text="No unsupported claims detected." />
         </Alert>
       )}
 
       {(hallucination.hallucination_score || 0) > 50 && (
         <Alert severity="warning" sx={{ mt: 1, fontSize: "0.82rem" }}>
-          ⚠ This answer may contain information not fully supported by the uploaded legal document.
+          ⚠ <S text="This answer may contain information not fully supported by the uploaded legal document." />
         </Alert>
       )}
     </>

@@ -11,6 +11,7 @@ from api.routers import comparison as comparison_router
 from api.routers import contradictions as contradictions_router
 from api.routers import documents as documents_router
 from api.routers import risk as risk_router
+from api.routers import translate as translate_router
 from database.models import init_db
 
 app = FastAPI(title="LQ-LegalAI API", version="0.1.0")
@@ -50,3 +51,4 @@ app.include_router(risk_router.router)
 app.include_router(contradictions_router.router)
 app.include_router(comparison_router.router)
 app.include_router(chat_router.router)
+app.include_router(translate_router.router)

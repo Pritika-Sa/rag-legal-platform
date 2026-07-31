@@ -1,5 +1,6 @@
 import { useTheme } from "@mui/material";
 import Plot from "react-plotly.js";
+import { useStaticText } from "../../hooks/useStaticText";
 
 // Port of views/comparison.py's inline go.Figure(go.Indicator(...)) gauge —
 // unlike the Dashboard/Risk-Analysis charts, this one was never built via
@@ -13,6 +14,7 @@ export function SimilarityGauge({ score }: { score: number }) {
   const isLight = theme.palette.mode === "light";
   const textColor = isLight ? "#31333F" : "#FFFFFF";
   const gridColor = isLight ? "#D5D5D5" : "#333333";
+  const titleText = useStaticText("Similarity Score");
 
   return (
     <Plot
@@ -22,7 +24,7 @@ export function SimilarityGauge({ score }: { score: number }) {
           mode: "gauge+number",
           value: score,
           domain: { x: [0, 1], y: [0, 1] },
-          title: { text: "Similarity Score", font: { size: 24, color: textColor } },
+          title: { text: titleText, font: { size: 24, color: textColor } },
           gauge: {
             axis: { range: [0, 100], tickcolor: gridColor },
             bar: { color: "#636EFA" },
